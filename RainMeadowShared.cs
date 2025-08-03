@@ -1,7 +1,8 @@
 using System.Net;
 
 namespace RainMeadow.Shared {
-    class SharedPlatform {
+    class SharedPlatform
+    {
         // Blackhole Endpoint
         // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
         public static readonly IPEndPoint BlackHole = new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999);
