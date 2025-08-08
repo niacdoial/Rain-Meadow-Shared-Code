@@ -43,16 +43,16 @@ namespace RainMeadow.Shared
 
         public const int DEFAULT_PORT = 8720;
         public const int FIND_PORT_ATTEMPTS = 8; // 8 players somehow hosting from the same machine is ridiculous.
-        public UDPPeerManager() {
+        public UDPPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             try {
                 this.socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 this.socket.EnableBroadcast = true;
 
-                port = DEFAULT_PORT;
+                port = default_port;
                 var activeUdpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
                 bool alreadyinuse = false;
-                for (int i = 0; i < FIND_PORT_ATTEMPTS; i++) {
-                    port = DEFAULT_PORT + i;
+                for (int i = 0; i < port_attempts; i++) {
+                    port = default_port + i;
                     alreadyinuse = activeUdpListeners.Any(p => p.Port == port);
                     if (!alreadyinuse)
                         break;
@@ -66,7 +66,7 @@ namespace RainMeadow.Shared
                 socket.Bind(new IPEndPoint(IPAddress.Any, port));
             } catch (SocketException except) {
                 SharedCodeLogger.Error(except.SocketErrorCode);
-                throw except;
+                throw;
             }
 
         }
