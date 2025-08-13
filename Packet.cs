@@ -21,6 +21,11 @@ namespace RainMeadow.Shared
             ChatMessage,
 
             // Router stuff
+
+            BeginRouterSession,
+            RouterModifyPlayerList,
+            JoinRouterLobby,
+            RouteSessionData
         }
 
         public delegate void BuildPacket_t(Type type, ref Packet? packet);
