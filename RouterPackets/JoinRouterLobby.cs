@@ -6,7 +6,6 @@ namespace RainMeadow.Shared
 {
     public class JoinRouterLobby : Packet
     {
-        public int currentplayercount = default;
         public int maxplayers = default;
         public bool passwordprotected = default;
         public string name = "";
@@ -16,13 +15,12 @@ namespace RainMeadow.Shared
         public ushort yourRoutingID;
 
         public JoinRouterLobby() { }
-        public JoinRouterLobby(ushort yourRoutingID, int maxplayers, string name, bool passwordprotected, string mode, int currentplayercount, string highImpactMods = "", string bannedMods = "")
+        public JoinRouterLobby(ushort yourRoutingID, int maxplayers, string name, bool passwordprotected, string mode, string highImpactMods = "", string bannedMods = "")
         {
             this.maxplayers = maxplayers;
             this.name = name;
             this.passwordprotected = passwordprotected;
             this.mode = mode;
-            this.currentplayercount = currentplayercount;
             this.mods = highImpactMods;
             this.bannedMods = bannedMods;
 
@@ -35,7 +33,6 @@ namespace RainMeadow.Shared
         {
             base.Serialize(writer);
             writer.Write(maxplayers);
-            writer.Write(currentplayercount);
             writer.Write(passwordprotected);
             writer.Write(name);
             writer.Write(mode);
@@ -48,7 +45,6 @@ namespace RainMeadow.Shared
         {
             base.Deserialize(reader);
             maxplayers = reader.ReadInt32();
-            currentplayercount = reader.ReadInt32();
             passwordprotected = reader.ReadBoolean();
             name = reader.ReadString();
             mode = reader.ReadString();
