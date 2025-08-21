@@ -9,6 +9,7 @@ namespace RainMeadow.Shared
         public override Type type => Type.BeginRouterSession;
         public bool exposeIPAddress;
 
+        public BeginRouterSession() { }
         public BeginRouterSession(bool exposeIPAddress)
         {
             this.exposeIPAddress = exposeIPAddress;

@@ -67,16 +67,16 @@ namespace RainMeadow.Shared
 
             Packet? packet = null;
             packetFactory?.Invoke(type, ref packet);
-            
+
 
 
             if (packet == null)
             {
                 // throw new Exception($"Undetermined packet type ({type}) received");
-                RainMeadow.Error("Bad Packet Type Recieved");
+                RainMeadow.Error($"Bad Packet Type Recieved {type}");
                 return;
-            } 
-            
+            }
+
             packet.processingEndpoint = fromEndpoint;
             packet.size = reader.ReadUInt16();
             var startingPos = reader.BaseStream.Position;
@@ -96,5 +96,22 @@ namespace RainMeadow.Shared
                 reader.BaseStream.Position = startingPos + packet.size;
             }
         }
+
+        public static void RouterFactory(Type type, ref Packet? packet)
+        {
+            if (packet is null)
+            {
+                packet = type switch
+                {
+                    Type.BeginRouterSession => new BeginRouterSession(),
+                    Type.RouterModifyPlayerList => new RouterModifyPlayerListPacket(),
+                    Type.JoinRouterLobby => new JoinRouterLobby(),
+                    Type.RouteSessionData => new RouteSessionData(),
+                    _ => null
+                };
+            }
+            
+        }
+
     }
 }

@@ -17,6 +17,8 @@ namespace RainMeadow.Shared
 
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
+
+        public RouterModifyPlayerListPacket ( ) { }
         public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds)
         {
             this.operation = operation;
