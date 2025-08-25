@@ -200,9 +200,10 @@ namespace RainMeadow.Shared
                         SharedCodeLogger.Debug("redundant begin_conversation flag? adding this flag to the next Reliable packet sent, which might not be the one currently queued.");
                         peer.need_begin_conversation_ack = true;
                     }
+                    if (!peer.outgoingpacket.Any()) SendRaw(packet, peer, packet_type, begin_conversation); // send immidietly if there are no pending packets
                     peer.outgoingpacket.Enqueue(packet);
                 } else {
-                    SendRaw(packet, peer, packet_type);
+                    SendRaw(packet, peer, packet_type, begin_conversation);
                 }
             } else SharedCodeLogger.Error("Failed to get remote peer");
         }
@@ -243,7 +244,7 @@ namespace RainMeadow.Shared
         long? lastTime = null!;
         public void Update()
         {
-            long time = Stopwatch.GetTimestamp();
+            long time = (long)SharedPlatform.TimeMS;
             long elapsedTime;
             if (!lastTime.HasValue)
             {
@@ -263,35 +264,32 @@ namespace RainMeadow.Shared
                 peer.TicksSinceLastIncomingPacket += (ulong)elapsedTime;
 
                 // TODO: separate heartbeat freq between player/player and player/server
-                ulong heartbeatTime = SharedPlatform.heartbeatTime*(ulong)Stopwatch.Frequency*1000;
-                ulong timeoutTime = SharedPlatform.timeoutTime*(ulong)Stopwatch.Frequency*1000;
+                ulong heartbeatTime = SharedPlatform.heartbeatTime;
+                ulong timeoutTime = SharedPlatform.timeoutTime;
                 if (peer.TicksSinceLastIncomingPacket >= timeoutTime)
                 {
+                    SharedCodeLogger.Error($"Forgetting {peer} due to Timeout, Timeout is {timeoutTime}ms");
                     peersToRemove.Add(peer);
                     continue;
                 }
 
                 peer.OutgoingPacketAcummulator += (ulong)elapsedTime;
-                ulong sendAmount; sendAmount = peer.OutgoingPacketAcummulator / heartbeatTime;
-                if (sendAmount >= 1)
+                RainMeadow.Debug($"{peer.PeerEndPoint}, {peer.OutgoingPacketAcummulator}");
+                while (peer.OutgoingPacketAcummulator > heartbeatTime)
                 {
-                    peer.OutgoingPacketAcummulator -= sendAmount * heartbeatTime;
+                    peer.OutgoingPacketAcummulator -= heartbeatTime;
                     peer.OutgoingPacketAcummulator = Math.Max(peer.OutgoingPacketAcummulator, 0); // just to be sure
-
-                    for (ulong j = 0; j < sendAmount; j++)
+                    if (peer.outgoingpacket.Any())
                     {
-                        if (peer.outgoingpacket.Count > 0)
-                        {
-                            SendRaw(peer.outgoingpacket.Peek(), peer, PacketType.Reliable, peer.need_begin_conversation_ack);
-                        }
-                        else if (peer.TicksSinceLastIncomingPacket > heartbeatTime)
-                        {
-                            SendRaw(
-                                Array.Empty<byte>(),
-                                peer,
-                                PacketType.HeartBeat
-                            );
-                        }
+                        SendRaw(peer.outgoingpacket.Peek(), peer, PacketType.Reliable, peer.need_begin_conversation_ack);
+                    }
+                    else if (peer.TicksSinceLastIncomingPacket > heartbeatTime)
+                    {
+                        SendRaw(
+                            Array.Empty<byte>(),
+                            peer,
+                            PacketType.HeartBeat
+                        );
                     }
                 }
             }
@@ -372,6 +370,12 @@ namespace RainMeadow.Shared
                             SharedCodeLogger.Debug("Recieved packet from peer we haven't started a conversation with.");
                             SharedCodeLogger.Debug(ipsender.ToString());
                             SharedCodeLogger.Debug(Enum.GetName(typeof(PacketType), type));
+
+                            foreach (RemotePeer otherpeer in this.peers)
+                            {
+                                SharedCodeLogger.Debug(otherpeer.PeerEndPoint.ToString());
+                            }
+
                             return null;
                         }
 
