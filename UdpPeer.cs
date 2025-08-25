@@ -201,9 +201,6 @@ namespace RainMeadow.Shared
                         peer.need_begin_conversation_ack = true;
                     }
                     peer.outgoingpacket.Enqueue(packet);
-                    if (peer.outgoingpacket.Count > 0) {  // no matter what, send the oldest queued Reliable packet
-                        SendRaw(peer.outgoingpacket.Peek(), peer, packet_type, begin_conversation);
-                    }
                 } else {
                     SendRaw(packet, peer, packet_type);
                 }
@@ -238,7 +235,7 @@ namespace RainMeadow.Shared
                     writer.Write(peer.remote_acknowledgement);
                 }
                 writer.Write(packet);
-                socket.SendTo(stream.GetBuffer().Take((int)stream.Position).ToArray(), peer.PeerEndPoint);
+                socket.SendTo(stream.GetBuffer(), peer.PeerEndPoint);
             }
         }
 
