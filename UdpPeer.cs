@@ -221,16 +221,20 @@ namespace RainMeadow.Shared
                 break;
             };
 
+            if ((extraLength + packet.Length) == 0) return;
             using (MemoryStream stream = new(packet.Length + extraLength))
-            using (BinaryWriter writer = new(stream)) {
+            using (BinaryWriter writer = new(stream))
+            {
                 writer.Write((byte)packet_type);
-                if (packet_type == PacketType.Reliable)  {
+                if (packet_type == PacketType.Reliable)
+                {
                     writer.Write(begin_conversation);
-                    writer.Write(peer.wanted_acknowledgement+1);
+                    writer.Write(peer.wanted_acknowledgement + 1);
                 }
 
 
-                if (packet_type == PacketType.HeartBeat) {
+                if (packet_type == PacketType.HeartBeat)
+                {
                     writer.Write(peer.remote_acknowledgement);
                 }
                 writer.Write(packet);
@@ -239,46 +243,60 @@ namespace RainMeadow.Shared
         }
 
 
-
-        Stopwatch stopWatch = new Stopwatch();
-        public void Update() {
-            long elapsedTime = stopWatch.ElapsedMilliseconds;
-            stopWatch.Restart();
+        long? lastTime = null!;
+        public void Update()
+        {
+            long time = Stopwatch.GetTimestamp();
+            long elapsedTime;
+            if (!lastTime.HasValue)
+            {
+                lastTime = time;
+                elapsedTime = 0;
+            }
+            else
+            {
+                elapsedTime = time - lastTime.Value;
+                lastTime = time;
+            }
 
             List<RemotePeer> peersToRemove = new();
-            for (int i = peers.Count - 1; i >= 0; i--) {
+            for (int i = peers.Count - 1; i >= 0; i--)
+            {
                 RemotePeer peer = peers[i];
                 peer.TicksSinceLastIncomingPacket += (ulong)elapsedTime;
 
                 // TODO: separate heartbeat freq between player/player and player/server
-                ulong heartbeatTime = SharedPlatform.heartbeatTime;
-                ulong timeoutTime = SharedPlatform.timeoutTime;
-                if (peer.TicksSinceLastIncomingPacket >= timeoutTime) {
+                ulong heartbeatTime = SharedPlatform.heartbeatTime*(ulong)Stopwatch.Frequency*1000;
+                ulong timeoutTime = SharedPlatform.timeoutTime*(ulong)Stopwatch.Frequency*1000;
+                if (peer.TicksSinceLastIncomingPacket >= timeoutTime)
+                {
                     peersToRemove.Add(peer);
                     continue;
                 }
 
                 peer.OutgoingPacketAcummulator += (ulong)elapsedTime;
                 ulong sendAmount; sendAmount = peer.OutgoingPacketAcummulator / heartbeatTime;
-                if (sendAmount >= 1)  {
+                if (sendAmount >= 1)
+                {
                     peer.OutgoingPacketAcummulator -= sendAmount * heartbeatTime;
                     peer.OutgoingPacketAcummulator = Math.Max(peer.OutgoingPacketAcummulator, 0); // just to be sure
 
-                    for (ulong j = 0; j < sendAmount; j++) {
-                        if (peer.outgoingpacket.Count > 0) {
+                    for (ulong j = 0; j < sendAmount; j++)
+                    {
+                        if (peer.outgoingpacket.Count > 0)
+                        {
                             SendRaw(peer.outgoingpacket.Peek(), peer, PacketType.Reliable, peer.need_begin_conversation_ack);
-                        } else if (peer.TicksSinceLastIncomingPacket > heartbeatTime) {
+                        }
+                        else if (peer.TicksSinceLastIncomingPacket > heartbeatTime)
+                        {
                             SendRaw(
-                                new byte[1] {1},
+                                Array.Empty<byte>(),
                                 peer,
                                 PacketType.HeartBeat
                             );
                         }
                     }
-
-
                 }
-
             }
 
             foreach (var peer in peersToRemove) ForgetPeer(peer);
@@ -384,7 +402,7 @@ namespace RainMeadow.Shared
                                     new_data = reader.ReadBytes(len - 2 - sizeof(ulong));
                                 }
                                 SendRaw(
-                                    new byte[1] {0},
+                                    Array.Empty<byte>(),
                                     peer,
                                     PacketType.HeartBeat
                                 );
@@ -407,14 +425,6 @@ namespace RainMeadow.Shared
                                         SharedCodeLogger.Error("Reliable Packet Acknowledgement without corresponding queued message! Expect more problems in ordered communications.");
                                     }
                                 } // else, this is a delayed copy of an already ack'd packet. no problem.
-
-                                bool wants_response = reader.ReadBoolean();
-                                if (wants_response)
-                                    SendRaw(
-                                        new byte[1] {0},
-                                        peer,
-                                        PacketType.HeartBeat
-                                    );
                                 return null;
 
                             default:
