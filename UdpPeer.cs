@@ -46,6 +46,7 @@ namespace RainMeadow.Shared
         public UDPPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             try {
                 this.socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                this.socket.Blocking = false;
                 this.socket.EnableBroadcast = true;
 
                 port = default_port;
@@ -282,7 +283,7 @@ namespace RainMeadow.Shared
                     {
                         SendRaw(peer.outgoingpacket.Peek(), peer, PacketType.Reliable, peer.need_begin_conversation_ack);
                     }
-                    else if (peer.TicksSinceLastIncomingPacket > heartbeatTime)
+                    else
                     {
                         SendRaw(
                             Array.Empty<byte>(),
