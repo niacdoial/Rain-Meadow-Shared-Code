@@ -274,7 +274,6 @@ namespace RainMeadow.Shared
                 }
 
                 peer.OutgoingPacketAcummulator += (ulong)elapsedTime;
-                RainMeadow.Debug($"{peer.PeerEndPoint}, {peer.OutgoingPacketAcummulator}");
                 while (peer.OutgoingPacketAcummulator > heartbeatTime)
                 {
                     peer.OutgoingPacketAcummulator -= heartbeatTime;
