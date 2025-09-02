@@ -6,6 +6,7 @@ namespace RainMeadow.Shared
 {
     public class BeginRouterSession : Packet
     {
+        // always used as a player->server packet
         public override Type type => Type.BeginRouterSession;
         public bool exposeIPAddress;
 
@@ -14,14 +15,16 @@ namespace RainMeadow.Shared
         {
             this.exposeIPAddress = exposeIPAddress;
         }
-            
+
         public override void Serialize(BinaryWriter writer)
         {
+            base.Serialize(writer);
             writer.Write(exposeIPAddress);
-        } 
-        
+        }
+
         public override void Deserialize(BinaryReader reader)
         {
+            base.Deserialize(reader);
             exposeIPAddress = reader.ReadBoolean();
         }
 

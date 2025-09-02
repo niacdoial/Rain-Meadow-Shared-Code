@@ -8,6 +8,7 @@ namespace RainMeadow.Shared
 {
     public class RouterModifyPlayerListPacket : Packet
     {
+        // roles: Server->Host or Server->Player
         public override Type type => Type.RouterModifyPlayerList;
         public enum Operation : byte
         {
@@ -27,6 +28,7 @@ namespace RainMeadow.Shared
 
         public override void Serialize(BinaryWriter writer)
         {
+            base.Serialize(writer);
             writer.Write((byte)operation);
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
@@ -34,6 +36,7 @@ namespace RainMeadow.Shared
 
         public override void Deserialize(BinaryReader reader)
         {
+            base.Deserialize(reader);
             operation = (Operation)reader.ReadByte();
             ushort count = reader.ReadUInt16();
             routerIds = new(count);

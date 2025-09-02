@@ -35,7 +35,7 @@ namespace RainMeadow.Shared {
         }
 
         static partial void getHeartBeatTime(ref ulong heartbeatTime);
-        static partial void getTimeoutTime(ref ulong TimeoutTime); 
-        static partial void getTimeMS(ref ulong time); 
+        static partial void getTimeoutTime(ref ulong TimeoutTime);
+        static partial void getTimeMS(ref ulong time);
     }
 }

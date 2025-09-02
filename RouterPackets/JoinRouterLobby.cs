@@ -6,16 +6,17 @@ namespace RainMeadow.Shared
 {
     public class JoinRouterLobby : Packet
     {
+        // always used as a server->player packet
         public int maxplayers = default;
         public bool passwordprotected = default;
         public string name = "";
         public string mode = "";
         public string mods = "";
         public string bannedMods = "";
-        public ushort yourRoutingID;
+        public ushort assignedRoutingID;
 
         public JoinRouterLobby() { }
-        public JoinRouterLobby(ushort yourRoutingID, int maxplayers, string name, bool passwordprotected, string mode, string highImpactMods = "", string bannedMods = "")
+        public JoinRouterLobby(ushort assignedRoutingID, int maxplayers, string name, bool passwordprotected, string mode, string highImpactMods = "", string bannedMods = "")
         {
             this.maxplayers = maxplayers;
             this.name = name;
@@ -24,7 +25,7 @@ namespace RainMeadow.Shared
             this.mods = highImpactMods;
             this.bannedMods = bannedMods;
 
-            this.yourRoutingID = yourRoutingID;
+            this.assignedRoutingID = assignedRoutingID;
         }
 
         public override Type type => Type.JoinRouterLobby;
@@ -38,7 +39,7 @@ namespace RainMeadow.Shared
             writer.Write(mode);
             writer.Write(mods);
             writer.Write(bannedMods);
-            writer.Write(yourRoutingID);
+            writer.Write(assignedRoutingID);
         }
 
         public override void Deserialize(BinaryReader reader)
@@ -50,7 +51,7 @@ namespace RainMeadow.Shared
             mode = reader.ReadString();
             mods = reader.ReadString();
             bannedMods = reader.ReadString();
-            yourRoutingID = reader.ReadUInt16();
+            assignedRoutingID = reader.ReadUInt16();
         }
 
 

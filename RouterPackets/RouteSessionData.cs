@@ -5,28 +5,36 @@ namespace RainMeadow.Shared
 {
     public class RouteSessionData : Packet
     {
+        // always used in player-to-player communication
+
         public override Type type => Type.RouteSessionData;
-        public ushort processingRouterID;
+        public ushort fromRouterID;
+        public ushort toRouterID;
         public byte[] data;
 
         public RouteSessionData() { }
-        public RouteSessionData(ushort processingRouterID, byte[] data, ushort size)
+        public RouteSessionData(ushort toRouterID, ushort fromRouterID, byte[] data, ushort size)
         {
-            this.processingRouterID = processingRouterID;
+            this.toRouterID = toRouterID;
+            this.fromRouterID = fromRouterID;
             this.data = data;
-            this.size = (ushort)(size + sizeof(ushort));
+            this.size = (ushort)(size);
         }
-            
+
         public override void Serialize(BinaryWriter writer)
         {
-            writer.Write(processingRouterID);
-            writer.Write(data, 0, size - sizeof(ushort));
+            base.Serialize(writer);
+            writer.Write(toRouterID);
+            writer.Write(fromRouterID);
+            writer.Write(data, 0, size);
         }
 
         public override void Deserialize(BinaryReader reader)
         {
-            processingRouterID = reader.ReadUInt16();
-            data = reader.ReadBytes(size - sizeof(ushort));
+            base.Deserialize(reader);
+            toRouterID = reader.ReadUInt16();
+            fromRouterID = reader.ReadUInt16();
+            data = reader.ReadBytes(size);
         }
 
         static public event Action<RouteSessionData>? ProcessAction = null;
