@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Runtime.InteropServices;
+using MonoMod.Utils;
 
 namespace RainMeadow.Shared
 {
@@ -18,12 +19,29 @@ namespace RainMeadow.Shared
 
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
+        public List<IPEndPoint> endPoints { get; private set; }
+        public List<string> userNames { get; private set; }
 
         public RouterModifyPlayerListPacket ( ) { }
+        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<IPEndPoint> endPoints, List<string> userNames)
+        {
+            if (routerIds.Count == endPoints.Count && routerIds.Count == userNames.Count) {
+            } else {
+                throw new Exception("incoherent counts in ModifyPlayerList arguments");
+            }
+
+            this.operation = operation;
+            this.routerIds = routerIds;
+            this.endPoints = endPoints;
+            this.userNames = userNames;
+        }
+
         public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds)
         {
             this.operation = operation;
             this.routerIds = routerIds;
+            this.endPoints = new List<IPEndPoint> {};
+            this.userNames = new List<string> {};
         }
 
         public override void Serialize(BinaryWriter writer)
@@ -32,6 +50,12 @@ namespace RainMeadow.Shared
             writer.Write((byte)operation);
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
+            if (operation == Operation.Add) {
+                UDPPeerManager.SerializeEndPoints(writer, endPoints.ToArray(), SharedPlatform.BlackHole, false);
+                foreach (string name in userNames) {
+                    writer.WriteNullTerminatedString(name);
+                }
+            }
         }
 
         public override void Deserialize(BinaryReader reader)
@@ -44,6 +68,17 @@ namespace RainMeadow.Shared
             for (int i = 0; i < count; i++)
             {
                 routerIds.Add(reader.ReadUInt16());
+            }
+
+            if (operation == Operation.Add) {
+                endPoints = new List<IPEndPoint> (UDPPeerManager.DeserializeEndPoints(reader, SharedPlatform.BlackHole));
+                userNames = new(count);
+                for (ushort i=0; i<count ; i++) {
+                    userNames.Add(reader.ReadNullTerminatedString());
+                }
+            } else {
+                endPoints = new(0);
+                userNames = new(0);
             }
         }
 
