@@ -21,8 +21,8 @@ namespace RainMeadow.Shared
             ChatMessage,
 
             // Router stuff
-
             BeginRouterSession,
+            EndRouterSession,
             RouterModifyPlayerList,
             JoinRouterLobby,
             RouteSessionData
@@ -110,7 +110,7 @@ namespace RainMeadow.Shared
                     _ => null
                 };
             }
-            
+
         }
 
     }
