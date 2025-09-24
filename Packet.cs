@@ -25,7 +25,11 @@ namespace RainMeadow.Shared
             EndRouterSession,
             RouterModifyPlayerList,
             JoinRouterLobby,
-            RouteSessionData
+            RouteSessionData,
+
+            // placeholder Router stuff
+            PublishRouterLobby,
+            LobbyIsEmpty,
         }
 
         public delegate void BuildPacket_t(Type type, ref Packet? packet);
