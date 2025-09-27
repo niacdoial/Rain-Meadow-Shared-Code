@@ -144,8 +144,8 @@ namespace RainMeadow.Shared
 
 
         public void ForgetPeer(RemotePeer peer) {
+            peers.Remove(peer);  // remove first, in case this peer's removal callback recurses into here
             OnPeerForgotten.Invoke(peer.PeerEndPoint);
-            peers.Remove(peer);
         }
         public void ForgetPeer(IPEndPoint endPoint) {
             var remove_peers = peers.FindAll(x => CompareIPEndpoints(endPoint, x.PeerEndPoint));
@@ -269,7 +269,7 @@ namespace RainMeadow.Shared
                 ulong timeoutTime = SharedPlatform.timeoutTime;
                 if (peer.TicksSinceLastIncomingPacket >= timeoutTime)
                 {
-                    SharedCodeLogger.Error($"Forgetting {peer} due to Timeout, Timeout is {timeoutTime}ms");
+                    SharedCodeLogger.Error($"Forgetting {peer.PeerEndPoint} due to Timeout, Timeout is {timeoutTime}ms");
                     peersToRemove.Add(peer);
                     continue;
                 }

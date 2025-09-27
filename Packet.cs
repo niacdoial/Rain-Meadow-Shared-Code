@@ -108,9 +108,12 @@ namespace RainMeadow.Shared
                 packet = type switch
                 {
                     Type.BeginRouterSession => new BeginRouterSession(),
+                    Type.EndRouterSession => new EndRouterSession(),
                     Type.RouterModifyPlayerList => new RouterModifyPlayerListPacket(),
                     Type.JoinRouterLobby => new JoinRouterLobby(),
                     Type.RouteSessionData => new RouteSessionData(),
+                    Type.LobbyIsEmpty => new LobbyIsEmpty(),
+                    Type.PublishRouterLobby => new PublishRouterLobby(),
                     _ => null
                 };
             }

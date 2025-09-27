@@ -51,7 +51,7 @@ namespace RainMeadow.Shared
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
             if (operation == Operation.Add) {
-                UDPPeerManager.SerializeEndPoints(writer, endPoints.ToArray(), SharedPlatform.BlackHole, false);
+                UDPPeerManager.SerializeEndPoints(writer, endPoints.ToArray(), processingEndpoint, false);
                 foreach (string name in userNames) {
                     writer.WriteNullTerminatedString(name);
                 }
