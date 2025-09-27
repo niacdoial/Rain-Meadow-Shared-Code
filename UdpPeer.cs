@@ -50,24 +50,27 @@ namespace RainMeadow.Shared
                 this.socket.EnableBroadcast = true;
 
                 port = default_port;
-                var activeUdpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
-                bool alreadyinuse = false;
-                for (int i = 0; i < port_attempts; i++) {
-                    port = default_port + i;
-                    alreadyinuse = activeUdpListeners.Any(p => p.Port == port);
-                    if (!alreadyinuse)
-                        break;
+                // Proton 8.0/Wine for FreeBSD bug: GetActiveUdpListeners is unavailable and not correctly emulated
+                try {
+                    var activeUdpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
+                    bool alreadyinuse = false;
+                    for (int i = 0; i < port_attempts; i++) {
+                        port = default_port + i;
+                        alreadyinuse = activeUdpListeners.Any(p => p.Port == port);
+                        if (!alreadyinuse)
+                            break;
+                    }
+    
+                    if (alreadyinuse) {
+                        throw new Exception("Failed to claim a socket port");
+                    }
+                }  catch (Exception e) {
+                    RainMeadow.Error($"{e}");
                 }
-
-                if (alreadyinuse) {
-                    throw new Exception("Failed to claim a socket port");
-                }
-
-
                 socket.Bind(new IPEndPoint(IPAddress.Any, port));
             } catch (SocketException except) {
                 SharedCodeLogger.Error(except.SocketErrorCode);
-                throw;
+                throw except;
             }
 
         }
@@ -170,7 +173,6 @@ namespace RainMeadow.Shared
                 parts[1] = "8720"; //default port
             }
 
-
             IPAddress? address = null;
             try {
                 address = IPAddress.Parse(parts[0]);
@@ -201,7 +203,7 @@ namespace RainMeadow.Shared
                         SharedCodeLogger.Debug("redundant begin_conversation flag? adding this flag to the next Reliable packet sent, which might not be the one currently queued.");
                         peer.need_begin_conversation_ack = true;
                     }
-                    if (!peer.outgoingpacket.Any()) SendRaw(packet, peer, packet_type, begin_conversation); // send immidietly if there are no pending packets
+                    if (!peer.outgoingpacket.Any()) SendRaw(packet, peer, packet_type, begin_conversation); // send immediately if there are no pending packets
                     peer.outgoingpacket.Enqueue(packet);
                 } else {
                     SendRaw(packet, peer, packet_type, begin_conversation);

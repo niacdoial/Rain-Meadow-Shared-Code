@@ -19,6 +19,7 @@ namespace RainMeadow.Shared
             RequestLobby,
             InformLobby,
             ChatMessage,
+            CustomPacket,
 
             // Router stuff
             BeginRouterSession,
@@ -27,6 +28,7 @@ namespace RainMeadow.Shared
             JoinRouterLobby,
             RouteSessionData,
             RouterChatMessage,
+            RouterCustomPacket,
 
             // placeholder Router stuff
             PublishRouterLobby,
@@ -116,6 +118,7 @@ namespace RainMeadow.Shared
                     Type.LobbyIsEmpty => new LobbyIsEmpty(),
                     Type.PublishRouterLobby => new PublishRouterLobby(),
                     Type.RouterChatMessage => new RouterChatMessage(),
+                    Type.RouterCustomPacket => new RouterCustomPacket(),
                     _ => null
                 };
             }
