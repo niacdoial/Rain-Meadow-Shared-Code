@@ -26,6 +26,7 @@ namespace RainMeadow.Shared
             RouterModifyPlayerList,
             JoinRouterLobby,
             RouteSessionData,
+            RouterChatMessage,
 
             // placeholder Router stuff
             PublishRouterLobby,
@@ -114,6 +115,7 @@ namespace RainMeadow.Shared
                     Type.RouteSessionData => new RouteSessionData(),
                     Type.LobbyIsEmpty => new LobbyIsEmpty(),
                     Type.PublishRouterLobby => new PublishRouterLobby(),
+                    Type.RouterChatMessage => new RouterChatMessage(),
                     _ => null
                 };
             }
