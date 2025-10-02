@@ -60,7 +60,7 @@ namespace RainMeadow.Shared
                         if (!alreadyinuse)
                             break;
                     }
-    
+
                     if (alreadyinuse) {
                         throw new Exception("Failed to claim a socket port");
                     }
@@ -110,6 +110,15 @@ namespace RainMeadow.Shared
             }
 
             return interface_addresses;
+        }
+
+        static public string describeEndPoint(IPEndPoint endPoint, IPEndPoint serverEndPoint=null){
+            return String.Format(
+                "[IP: is machine local: {0}, is network local: {1}, is devnull: {2}]",
+                isLoopback(endPoint.Address),
+                isEndpointLocal(endPoint),
+                CompareIPEndpoints(endPoint, SharedPlatform.BlackHole)
+            );
         }
 
         static public bool isLoopback(IPAddress address) {
@@ -271,7 +280,7 @@ namespace RainMeadow.Shared
                 ulong timeoutTime = SharedPlatform.timeoutTime;
                 if (peer.TicksSinceLastIncomingPacket >= timeoutTime)
                 {
-                    SharedCodeLogger.Error($"Forgetting {peer.PeerEndPoint} due to Timeout, Timeout is {timeoutTime}ms");
+                    SharedCodeLogger.Error($"Forgetting {describeEndPoint(peer.PeerEndPoint)} due to Timeout, Timeout is {timeoutTime}ms");
                     peersToRemove.Add(peer);
                     continue;
                 }
@@ -370,12 +379,12 @@ namespace RainMeadow.Shared
                         if (type != PacketType.UnreliableBroadcast) // If it's a broadcast, we don't need to start a converstation.
                         if (peer == null) {
                             SharedCodeLogger.Debug("Recieved packet from peer we haven't started a conversation with.");
-                            SharedCodeLogger.Debug(ipsender.ToString());
+                            SharedCodeLogger.Debug(describeEndPoint(ipsender));
                             SharedCodeLogger.Debug(Enum.GetName(typeof(PacketType), type));
 
                             foreach (RemotePeer otherpeer in this.peers)
                             {
-                                SharedCodeLogger.Debug(otherpeer.PeerEndPoint.ToString());
+                                SharedCodeLogger.Debug(describeEndPoint(otherpeer.PeerEndPoint));
                             }
 
                             return null;
