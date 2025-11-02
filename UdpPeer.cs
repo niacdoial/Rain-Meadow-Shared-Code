@@ -12,12 +12,50 @@ using System.Security.Cryptography;
 namespace RainMeadow.Shared
 {
 
+    public class UDPPeerId : PeerId {
+        public IPEndPoint endPoint;
+        public UDPPeerId(IPEndPoint endPoint) {
+            this.endPoint = endPoint;
+        }
+        public override bool Equals(PeerId other)
+        {
+            if (other is UDPPeerId id)
+            {
+                return BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
+            }
+            return false;
+        }
+        public override bool isLoopback()
+        {
+            if (endPoint is null) return false;
+            if (SharedPlatform.PlatformPeerManager?.port != endPoint.Port) return false;
+            return BasePeerManager.isLoopback(endPoint.Address);
+        }
+        public override bool isNetworkLocal()
+        {
+            if (endPoint is null) return false;
+            return BasePeerManager.isEndpointLocal(endPoint);
+        }
+        public override void CustomSerialize(Serializer serializer)
+        {
+            if (serializer.IsWriting)
+            {
+                serializer.writer.Write((int)endPoint.Port);
+                serializer.writer.Write((int)endPoint.Address.GetAddressBytes().Length);
+                serializer.writer.Write(endPoint.Address.GetAddressBytes());
+            }
+            else if (serializer.IsReading)
+            {
+                int port = serializer.reader.ReadInt32();
+                byte[] endpointbytes = serializer.reader.ReadBytes(serializer.reader.ReadInt32());
+                this.endPoint = new IPEndPoint(new IPAddress(endpointbytes), port);
+            }
+        }
+    }
+
     public class UDPPeerManager : BasePeerManager
     {
-        public bool IsDisposed { get => _isDisposed; }
-        private bool _isDisposed = false;
-
-        public enum PacketType : byte
+        public enum RawPacketType : byte
         {
             Unreliable = 0,
             UnreliableBroadcast,
@@ -25,8 +63,11 @@ namespace RainMeadow.Shared
             HeartBeat,  // also serves as acknowledgement
         }
 
+        // Blackhole Endpoint
+        // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
+        public readonly PeerId BlackHole = new UDPPeerId(new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999));
 
-        public class RemotePeer {
+        class RemotePeer {
             public IPEndPoint PeerEndPoint { get; set; } = new IPEndPoint(IPAddress.Any, 0);
             public ulong TicksSinceLastIncomingPacket = 0;
             public ulong OutgoingPacketAcummulator = 0;
@@ -45,60 +86,117 @@ namespace RainMeadow.Shared
         }
 
         List<RemotePeer> peers = new();
-        public RemotePeer? GetRemotePeer(IPEndPoint endPoint, bool make_one = false) {
-            RemotePeer? peer = peers.FirstOrDefault(x => CompareIPEndpoints(endPoint, x.PeerEndPoint));
+        RemotePeer? GetRemotePeer(PeerId peerId, bool make_one = false) {
+            var udpPeerId = peerId as UDPPeerId;
+            if (udpPeerId is null) return null;
+            RemotePeer? peer = peers.FirstOrDefault(x => CompareIPEndpoints(udpPeerId.endPoint, x.PeerEndPoint));
             if (peer == null && make_one) {
-                peer = new RemotePeer() {PeerEndPoint = endPoint};
+                peer = new RemotePeer() {PeerEndPoint = udpPeerId.endPoint};
                 peers.Add(peer);
             }
 
             return peer;
         }
 
-        public delegate void OnPeerForgotten_t(IPEndPoint endPoint);
-        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
 
-
-        public void ForgetPeer(RemotePeer peer) {
-            peers.Remove(peer);  // remove first, in case this peer's removal callback recurses into here
-            OnPeerForgotten.Invoke(peer.PeerEndPoint);
+        public override PeerId GetSelf() {
+            return new UDPPeerId(new IPEndPoint(
+                BasePeerManager.getInterfaceAddresses()[0],
+                this.port
+            ));
         }
-        public void ForgetPeer(IPEndPoint endPoint) {
-            var remove_peers = peers.FindAll(x => CompareIPEndpoints(endPoint, x.PeerEndPoint));
+        public override PeerId[] GetBroadcastPeerIDs() {
+            List<PeerId> broadcastables = new List<PeerId>();
+            for (int broadcast_port = BasePeerManager.DEFAULT_PORT;
+                broadcast_port < (BasePeerManager.FIND_PORT_ATTEMPTS + BasePeerManager.DEFAULT_PORT);
+                broadcast_port++)
+            {
+                broadcastables.Add(new UDPPeerId(new(IPAddress.Broadcast, broadcast_port)));
+            }
+            return broadcastables.ToArray();
+        }
+
+        public /*static*/ override PeerId? GetPeerIdByName(string name) {
+            IPEndPoint? endPoint = GetEndPointByName(name);
+            if (endPoint is null) return null;
+            return new UDPPeerId(endPoint);
+        }
+
+        public /*static*/ override string describePeerId(PeerId endPoint, PeerId? serverEndPoint=null){
+            var peerId = endPoint as UDPPeerId;
+            if (peerId is null) {
+                return "[Bad PeerId type, expected UDP PeerId]";
+            }
+            return String.Format(
+                "[IP: is machine local: {0}, is network local: {1}, is devnull: {2}]",
+                peerId.isLoopback(),
+                isEndpointLocal(peerId.endPoint),
+                (endPoint == BlackHole)
+            );
+        }
+
+        public /*static*/ override void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true) {
+            var filteredEndPoints = endPoints.Select(x => x as UDPPeerId)
+                .Where(x=> x != null)
+                .Select(x=>x.endPoint).ToArray();
+            var dest = addressedto as UDPPeerId;
+            if (dest is null) {return;}
+            SerializeIPEndPoints(writer, filteredEndPoints, dest.endPoint, includeme);
+        }
+        public /*static*/ override PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho) {
+            UDPPeerId? sender = fromWho as UDPPeerId;
+            if (sender is null) {throw new Exception("bad PeerId as sender");}
+            var rawEndPoints = DeserializeIPEndPoints(reader, sender.endPoint);
+            return rawEndPoints.Select(x => new UDPPeerId(x)).ToArray();
+        }
+
+        void ForgetPeer(RemotePeer peer) {
+            peers.Remove(peer);  // remove first, in case this peer's removal callback recurses into here
+            Run_OnPeerForgotten(new UDPPeerId(peer.PeerEndPoint));
+        }
+        public override void ForgetPeer(PeerId peerId) {
+            var udpPeerId = peerId as UDPPeerId;
+            if (udpPeerId is null) return;
+            var remove_peers = peers.FindAll(x => CompareIPEndpoints(udpPeerId.endPoint, x.PeerEndPoint));
             foreach (RemotePeer peer in remove_peers) {
                 ForgetPeer(peer);
             }
         }
 
-        public void ForgetAllPeers() {
+        public override void ForgetAllPeers() {
             var remove_peers = peers.ToList();
             foreach (RemotePeer peer in remove_peers) {
                 ForgetPeer(peer);
             }
         }
 
-        public void Send(byte[] packet, IPEndPoint endPoint, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false) {
-            if (GetRemotePeer(endPoint, true) is RemotePeer peer) {
+        public override void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false) {
+            RawPacketType rawPacketType = packet_type switch {
+                PacketType.Unreliable => RawPacketType.Unreliable,
+                PacketType.Reliable => RawPacketType.Reliable,
+                PacketType.UnreliableBroadcast => RawPacketType.UnreliableBroadcast,
+            };
+            if (GetRemotePeer(peerId, true) is RemotePeer peer) {
                 if (packet_type == PacketType.Reliable) {
                     if (begin_conversation && !peer.need_begin_conversation_ack) {
                         SharedCodeLogger.Debug("redundant begin_conversation flag? adding this flag to the next Reliable packet sent, which might not be the one currently queued.");
                         peer.need_begin_conversation_ack = true;
                     }
-                    if (!peer.outgoingpacket.Any()) SendRaw(packet, peer, packet_type, begin_conversation); // send immediately if there are no pending packets
+                    if (!peer.outgoingpacket.Any()) SendRaw(packet, peer, rawPacketType, begin_conversation); // send immediately if there are no pending packets
                     peer.outgoingpacket.Enqueue(packet);
                 } else {
-                    SendRaw(packet, peer, packet_type, begin_conversation);
+                    SendRaw(packet, peer, rawPacketType, begin_conversation);
                 }
             } else SharedCodeLogger.Error("Failed to get remote peer");
         }
 
-        public void SendRaw(byte[] packet, RemotePeer peer, PacketType packet_type, bool begin_conversation = false) {
+        void SendRaw(byte[] packet, RemotePeer peer, RawPacketType packet_type, bool begin_conversation = false) {
             int extraLength = 1;
             switch (packet_type) {
-            case PacketType.Reliable:
+            case RawPacketType.Reliable:
                 extraLength = 2 + sizeof(ulong);
                 break;
-            case PacketType.HeartBeat:
+            case RawPacketType.HeartBeat:
                 extraLength = 1 + sizeof(ulong);
                 break;
             };
@@ -108,14 +206,14 @@ namespace RainMeadow.Shared
             using (BinaryWriter writer = new(stream))
             {
                 writer.Write((byte)packet_type);
-                if (packet_type == PacketType.Reliable)
+                if (packet_type == RawPacketType.Reliable)
                 {
                     writer.Write(begin_conversation);
                     writer.Write(peer.wanted_acknowledgement + 1);
                 }
 
 
-                if (packet_type == PacketType.HeartBeat)
+                if (packet_type == RawPacketType.HeartBeat)
                 {
                     writer.Write(peer.remote_acknowledgement);
                 }
@@ -126,7 +224,7 @@ namespace RainMeadow.Shared
 
 
         long? lastTime = null!;
-        public void Update()
+        public override void Update()
         {
             long time = (long)SharedPlatform.TimeMS;
             long elapsedTime;
@@ -152,7 +250,7 @@ namespace RainMeadow.Shared
                 ulong timeoutTime = SharedPlatform.timeoutTime;
                 if (peer.TicksSinceLastIncomingPacket >= timeoutTime)
                 {
-                    SharedCodeLogger.Error($"Forgetting {describeEndPoint(peer.PeerEndPoint)} due to Timeout, Timeout is {timeoutTime}ms");
+                    SharedCodeLogger.Error($"Forgetting {describePeerId(new UDPPeerId(peer.PeerEndPoint))} due to Timeout, Timeout is {timeoutTime}ms");
                     peersToRemove.Add(peer);
                     continue;
                 }
@@ -164,14 +262,14 @@ namespace RainMeadow.Shared
                     peer.OutgoingPacketAcummulator = Math.Max(peer.OutgoingPacketAcummulator, 0); // just to be sure
                     if (peer.outgoingpacket.Any())
                     {
-                        SendRaw(peer.outgoingpacket.Peek(), peer, PacketType.Reliable, peer.need_begin_conversation_ack);
+                        SendRaw(peer.outgoingpacket.Peek(), peer, RawPacketType.Reliable, peer.need_begin_conversation_ack);
                     }
                     else
                     {
                         SendRaw(
                             Array.Empty<byte>(),
                             peer,
-                            PacketType.HeartBeat
+                            RawPacketType.HeartBeat
                         );
                     }
                 }
@@ -180,49 +278,50 @@ namespace RainMeadow.Shared
             foreach (var peer in peersToRemove) ForgetPeer(peer);
         }
 
-        public byte[]? Recieve(out EndPoint? sender) {
+        public override byte[]? Recieve(out PeerId? sender) {
             sender = null;
 
             if (socket.Available != 0) {
-                sender = new IPEndPoint(IPAddress.Loopback, 8720);
+                EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
 
                 byte[] buffer;
                 int len = 0;
                 try {
                     buffer = new byte[socket.Available];
-                    len = socket.ReceiveFrom(buffer, ref sender);
+                    len = socket.ReceiveFrom(buffer, ref senderEndPoint);
                 } catch (Exception except) {
                     SharedCodeLogger.Error(except);
                     return null;
                 }
 
 
-                IPEndPoint? ipsender = sender as IPEndPoint;
+                IPEndPoint? ipsender = senderEndPoint as IPEndPoint;
                 if (ipsender == null) return null;
+                sender = new UDPPeerId(ipsender);
 
-                RemotePeer? peer = GetRemotePeer(ipsender);
+                RemotePeer? peer = GetRemotePeer(sender);
 
                 using (MemoryStream stream = new(buffer, 0, len, false))
                 using (BinaryReader reader = new(stream)) {
                     try {
-                        PacketType type = (PacketType)reader.ReadByte();
+                        RawPacketType type = (RawPacketType)reader.ReadByte();
 
-                        if (type == PacketType.Reliable) {
+                        if (type == RawPacketType.Reliable) {
                             bool begin_conversation = reader.ReadBoolean();
                             if (begin_conversation && peer == null) {
-                                peer = GetRemotePeer(ipsender, true);
+                                peer = GetRemotePeer(sender, true);
                             }
                         }
 
-                        if (type != PacketType.UnreliableBroadcast) // If it's a broadcast, we don't need to start a converstation.
+                        if (type != RawPacketType.UnreliableBroadcast) // If it's a broadcast, we don't need to start a converstation.
                         if (peer == null) {
                             SharedCodeLogger.Debug("Recieved packet from peer we haven't started a conversation with.");
-                            SharedCodeLogger.Debug(describeEndPoint(ipsender));
-                            SharedCodeLogger.Debug(Enum.GetName(typeof(PacketType), type));
+                            SharedCodeLogger.Debug(describePeerId(sender));
+                            SharedCodeLogger.Debug(Enum.GetName(typeof(RawPacketType), type));
 
                             foreach (RemotePeer otherpeer in this.peers)
                             {
-                                SharedCodeLogger.Debug(describeEndPoint(otherpeer.PeerEndPoint));
+                                SharedCodeLogger.Debug(describePeerId(new UDPPeerId(otherpeer.PeerEndPoint)));
                             }
 
                             return null;
@@ -233,11 +332,11 @@ namespace RainMeadow.Shared
 
 
                         switch (type) {
-                            case PacketType.UnreliableBroadcast:
-                            case PacketType.Unreliable:
+                            case RawPacketType.UnreliableBroadcast:
+                            case RawPacketType.Unreliable:
                                 return reader.ReadBytes(len - 1);
 
-                            case PacketType.Reliable:
+                            case RawPacketType.Reliable:
                                 if (peer == null) return null;
 
                                 ulong wanted_ack = reader.ReadUInt64();
@@ -254,10 +353,10 @@ namespace RainMeadow.Shared
                                 SendRaw(
                                     Array.Empty<byte>(),
                                     peer,
-                                    PacketType.HeartBeat
+                                    RawPacketType.HeartBeat
                                 );
                                 return new_data;
-                            case PacketType.HeartBeat:
+                            case RawPacketType.HeartBeat:
                                 if (peer == null) return null;
                                 peer.need_begin_conversation_ack = false;
                                 ulong remote_ack = reader.ReadUInt64();
@@ -288,12 +387,6 @@ namespace RainMeadow.Shared
                 }
             }
             return null;
-        }
-
-        void IDisposable.Dispose() {
-            socket.Dispose();
-            _isDisposed = true;
-            GC.SuppressFinalize(this);
         }
     }
 }

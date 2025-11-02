@@ -11,15 +11,37 @@ using System.Security.Cryptography;
 
 namespace RainMeadow.Shared
 {
+    public abstract class PeerId {
+        public abstract bool Equals(PeerId other);
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as PeerId);
+        }
+        public static bool operator ==(PeerId lhs, PeerId rhs)
+        {
+            return lhs is null ? rhs is null : lhs.Equals(rhs);
+        }
+        public static bool operator !=(PeerId lhs, PeerId rhs) => !(lhs == rhs);
+        public abstract bool isLoopback();
+        public abstract bool isNetworkLocal();
+        public abstract void CustomSerialize(Serializer serializer);
+    }
     public abstract class BasePeerManager : IDisposable
     {
+        public enum PacketType : byte
+        {
+            Unreliable = 0,
+            UnreliableBroadcast,
+            Reliable, // and ordered!
+        }
+
         public Socket socket;
         public int port;
 
         public const int DEFAULT_PORT = 8720;
         public const int FIND_PORT_ATTEMPTS = 8; // 8 players somehow hosting from the same machine is ridiculous.
 
-        voic InitSocket(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
+        public void InitSocket(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             try {
                 this.socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 this.socket.Blocking = false;
@@ -73,15 +95,6 @@ namespace RainMeadow.Shared
             }
 
             return interface_addresses;
-        }
-
-        static public string describeEndPoint(IPEndPoint endPoint, IPEndPoint serverEndPoint=null){
-            return String.Format(
-                "[IP: is machine local: {0}, is network local: {1}, is devnull: {2}]",
-                isLoopback(endPoint.Address),
-                isEndpointLocal(endPoint),
-                CompareIPEndpoints(endPoint, SharedPlatform.BlackHole)
-            );
         }
 
         static public bool isLoopback(IPAddress address) {
@@ -148,7 +161,7 @@ namespace RainMeadow.Shared
 
 
         public bool IsPacketAvailable() { return socket.Available > 0; }
-        public static void SerializeEndPoints(BinaryWriter writer, IPEndPoint[] endPoints, IPEndPoint addressedto, bool includeme = true) {
+        public static void SerializeIPEndPoints(BinaryWriter writer, IPEndPoint[] endPoints, IPEndPoint addressedto, bool includeme = true) {
             writer.Write(includeme);
             writer.Write((int)endPoints.Length);
             foreach (IPEndPoint point in endPoints) {
@@ -164,7 +177,7 @@ namespace RainMeadow.Shared
             }
         }
 
-        public static IPEndPoint[] DeserializeEndPoints(BinaryReader reader, IPEndPoint fromWho) {
+        public static IPEndPoint[] DeserializeIPEndPoints(BinaryReader reader, IPEndPoint fromWho) {
             bool includesender = reader.ReadBoolean();
             IPEndPoint[] ret = new IPEndPoint[reader.ReadInt32() + (includesender? 1 : 0)];
             int i = 0;
@@ -180,6 +193,36 @@ namespace RainMeadow.Shared
             }
 
             return ret.ToArray();
+        }
+
+
+        public /*static*/ readonly PeerId BlackHole;
+        public abstract PeerId GetSelf();
+        public /*static*/ abstract PeerId[] GetBroadcastPeerIDs();
+        public /*static*/ abstract PeerId? GetPeerIdByName(string name);
+        public /*static*/ abstract string describePeerId(PeerId endPoint, PeerId? serverEndPoint=null);
+
+        public delegate void OnPeerForgotten_t(PeerId peerId);
+        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
+        public void Run_OnPeerForgotten(PeerId peerId) {
+            OnPeerForgotten.Invoke(peerId);
+        }
+
+        public /*static*/ abstract void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true);
+        public /*static*/ abstract PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho);
+
+        public abstract void ForgetPeer(PeerId peerId);
+        public abstract void ForgetAllPeers();
+        public abstract void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false);
+        public abstract byte[]? Recieve(out PeerId? sender);
+        public abstract void Update();
+
+        public bool IsDisposed { get => _isDisposed; }
+        private bool _isDisposed = false;
+        void IDisposable.Dispose() {
+            socket.Dispose();
+            _isDisposed = true;
+            GC.SuppressFinalize(this);
         }
     }
 }

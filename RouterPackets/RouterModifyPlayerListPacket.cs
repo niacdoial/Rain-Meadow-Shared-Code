@@ -19,11 +19,11 @@ namespace RainMeadow.Shared
 
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
-        public List<IPEndPoint> endPoints { get; private set; }
+        public List<PeerId> endPoints { get; private set; }
         public List<string> userNames { get; private set; }
 
         public RouterModifyPlayerListPacket ( ) { }
-        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<IPEndPoint> endPoints, List<string> userNames)
+        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<PeerId> endPoints, List<string> userNames)
         {
             if (routerIds.Count == endPoints.Count && routerIds.Count == userNames.Count) {
             } else {
@@ -40,7 +40,7 @@ namespace RainMeadow.Shared
         {
             this.operation = operation;
             this.routerIds = routerIds;
-            this.endPoints = new List<IPEndPoint> {};
+            this.endPoints = new List<PeerId> {};
             this.userNames = new List<string> {};
         }
 
@@ -51,7 +51,7 @@ namespace RainMeadow.Shared
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
             if (operation == Operation.Add) {
-                UDPPeerManager.SerializeEndPoints(writer, endPoints.ToArray(), processingEndpoint, false);
+                SharedPlatform.PlatformPeerManager.SerializePeerIDs(writer, endPoints.ToArray(), processingEndpoint, false);
                 foreach (string name in userNames) {
                     writer.WriteNullTerminatedString(name);
                 }
@@ -71,7 +71,7 @@ namespace RainMeadow.Shared
             }
 
             if (operation == Operation.Add) {
-                endPoints = new List<IPEndPoint> (UDPPeerManager.DeserializeEndPoints(reader, SharedPlatform.BlackHole));
+                endPoints = new List<PeerId> (SharedPlatform.PlatformPeerManager.DeserializePeerIDs(reader, SharedPlatform.PlatformPeerManager.BlackHole));
                 userNames = new(count);
                 for (ushort i=0; i<count ; i++) {
                     userNames.Add(reader.ReadNullTerminatedString());

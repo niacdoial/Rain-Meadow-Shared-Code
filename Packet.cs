@@ -45,12 +45,12 @@ namespace RainMeadow.Shared
         public virtual void Deserialize(BinaryReader reader) { } // Read from bytes
         public virtual void Process() { } // Do the payload
 
-        public IPEndPoint processingEndpoint;
+        public PeerId processingEndpoint;
 
 
 
 
-        public static void Encode(Packet packet, BinaryWriter writer, IPEndPoint toEndpoint)
+        public static void Encode(Packet packet, BinaryWriter writer, PeerId toEndpoint)
         {
             packet.processingEndpoint = toEndpoint;
 
@@ -66,7 +66,7 @@ namespace RainMeadow.Shared
             writer.Seek(packet.size, SeekOrigin.Current);
         }
 
-        public static void Decode(BinaryReader reader, IPEndPoint fromEndpoint)
+        public static void Decode(BinaryReader reader, PeerId fromEndpoint)
         {
             Type type = (Type)reader.ReadByte();
             // RainMeadow.Debug($"Recieved {type}");
