@@ -24,7 +24,6 @@ namespace RainMeadow.Shared
         public static bool operator !=(PeerId lhs, PeerId rhs) => !(lhs == rhs);
         public abstract bool isLoopback();
         public abstract bool isNetworkLocal();
-        public abstract void CustomSerialize(Serializer serializer);
     }
     public abstract class BasePeerManager : IDisposable
     {
@@ -159,8 +158,10 @@ namespace RainMeadow.Shared
             return new IPEndPoint(address, port);
         }
 
-
         public bool IsPacketAvailable() { return socket.Available > 0; }
+
+        /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
+        /// The functions that do not need a separate mechanism to deal with this.
         public static void SerializeIPEndPoints(BinaryWriter writer, IPEndPoint[] endPoints, IPEndPoint addressedto, bool includeme = true) {
             writer.Write(includeme);
             writer.Write((int)endPoints.Length);
@@ -195,6 +196,17 @@ namespace RainMeadow.Shared
             return ret.ToArray();
         }
 
+        public static void SerializeIPEndPoint(BinaryWriter writer, IPEndPoint endPoint) {
+            writer.Write((int)endPoint.Port);
+            writer.Write((int)endPoint.Address.GetAddressBytes().Length);
+            writer.Write(endPoint.Address.GetAddressBytes());
+        }
+        public static IPEndPoint DeserializeIPEndPoint(BinaryReader reader) {
+            int port = reader.ReadInt32();
+            byte[] endpointbytes = reader.ReadBytes(reader.ReadInt32());
+            return new IPEndPoint(new IPAddress(endpointbytes), port);
+        }
+
 
         public /*static*/ readonly PeerId BlackHole;
         public abstract PeerId GetSelf();
@@ -210,7 +222,10 @@ namespace RainMeadow.Shared
 
         public /*static*/ abstract void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true);
         public /*static*/ abstract PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho);
+        public /*static*/ abstract void SerializePeerId(BinaryWriter writer, PeerId peerId);
+        public /*static*/ abstract PeerId DeserializePeerId(BinaryReader reader);
 
+        public abstract void EnsureRemotePeerCreated(PeerId peerId);
         public abstract void ForgetPeer(PeerId peerId);
         public abstract void ForgetAllPeers();
         public abstract void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false);

@@ -36,21 +36,6 @@ namespace RainMeadow.Shared
             if (endPoint is null) return false;
             return BasePeerManager.isEndpointLocal(endPoint);
         }
-        public override void CustomSerialize(Serializer serializer)
-        {
-            if (serializer.IsWriting)
-            {
-                serializer.writer.Write((int)endPoint.Port);
-                serializer.writer.Write((int)endPoint.Address.GetAddressBytes().Length);
-                serializer.writer.Write(endPoint.Address.GetAddressBytes());
-            }
-            else if (serializer.IsReading)
-            {
-                int port = serializer.reader.ReadInt32();
-                byte[] endpointbytes = serializer.reader.ReadBytes(serializer.reader.ReadInt32());
-                this.endPoint = new IPEndPoint(new IPAddress(endpointbytes), port);
-            }
-        }
     }
 
     public class UDPPeerManager : BasePeerManager
@@ -84,20 +69,6 @@ namespace RainMeadow.Shared
         public UDPPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             InitSocket();
         }
-
-        List<RemotePeer> peers = new();
-        RemotePeer? GetRemotePeer(PeerId peerId, bool make_one = false) {
-            var udpPeerId = peerId as UDPPeerId;
-            if (udpPeerId is null) return null;
-            RemotePeer? peer = peers.FirstOrDefault(x => CompareIPEndpoints(udpPeerId.endPoint, x.PeerEndPoint));
-            if (peer == null && make_one) {
-                peer = new RemotePeer() {PeerEndPoint = udpPeerId.endPoint};
-                peers.Add(peer);
-            }
-
-            return peer;
-        }
-
 
         public override PeerId GetSelf() {
             return new UDPPeerId(new IPEndPoint(
@@ -135,6 +106,8 @@ namespace RainMeadow.Shared
             );
         }
 
+        /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
+        /// The functions that do not need a separate mechanism to deal with this.
         public /*static*/ override void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true) {
             var filteredEndPoints = endPoints.Select(x => x as UDPPeerId)
                 .Where(x=> x != null)
@@ -148,6 +121,32 @@ namespace RainMeadow.Shared
             if (sender is null) {throw new Exception("bad PeerId as sender");}
             var rawEndPoints = DeserializeIPEndPoints(reader, sender.endPoint);
             return rawEndPoints.Select(x => new UDPPeerId(x)).ToArray();
+        }
+
+        public /*static*/ override void SerializePeerId(BinaryWriter writer, PeerId peerId) {
+            UDPPeerId? truePeerId = peerId as UDPPeerId;
+            if (truePeerId is null) {throw new Exception("bad PeerId to serialize");}
+            BasePeerManager.SerializeIPEndPoint(writer, truePeerId.endPoint);
+        }
+        public /*static*/ override PeerId DeserializePeerId(BinaryReader reader) {
+            return new UDPPeerId(BasePeerManager.DeserializeIPEndPoint(reader));
+        }
+
+        List<RemotePeer> peers = new();
+        RemotePeer? GetRemotePeer(PeerId peerId, bool make_one = false) {
+            var udpPeerId = peerId as UDPPeerId;
+            if (udpPeerId is null) return null;
+            RemotePeer? peer = peers.FirstOrDefault(x => CompareIPEndpoints(udpPeerId.endPoint, x.PeerEndPoint));
+            if (peer == null && make_one) {
+                peer = new RemotePeer() {PeerEndPoint = udpPeerId.endPoint};
+                peers.Add(peer);
+            }
+
+            return peer;
+        }
+
+        public override void EnsureRemotePeerCreated(PeerId peerId) {
+            GetRemotePeer(peerId, true);
         }
 
         void ForgetPeer(RemotePeer peer) {
