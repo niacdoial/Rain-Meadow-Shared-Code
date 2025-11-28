@@ -197,13 +197,14 @@ namespace RainMeadow.Shared
         }
 
         public static void SerializeIPEndPoint(BinaryWriter writer, IPEndPoint endPoint) {
-            writer.Write((int)endPoint.Port);
-            writer.Write((int)endPoint.Address.GetAddressBytes().Length);
+            writer.Write((byte)endPoint.Address.GetAddressBytes().Length);
+            writer.Write((UInt16)endPoint.Port);
             writer.Write(endPoint.Address.GetAddressBytes());
         }
         public static IPEndPoint DeserializeIPEndPoint(BinaryReader reader) {
-            int port = reader.ReadInt32();
-            byte[] endpointbytes = reader.ReadBytes(reader.ReadInt32());
+            int length = reader.ReadByte();
+            int port = reader.ReadUInt16();
+            byte[] endpointbytes = reader.ReadBytes(length);
             return new IPEndPoint(new IPAddress(endpointbytes), port);
         }
 
@@ -233,7 +234,7 @@ namespace RainMeadow.Shared
         public abstract void Update();
 
         public bool IsDisposed { get => _isDisposed; }
-        private bool _isDisposed = false;
+        public bool _isDisposed = false;
         void IDisposable.Dispose() {
             socket.Dispose();
             _isDisposed = true;
