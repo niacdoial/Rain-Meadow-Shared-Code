@@ -6,8 +6,25 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-//using UnityEngine;
+//using System.Security.Cryptography;
+
+/// //////////////////////////////////////////
+/// This file describes the common interface for the lowest part of the network stack (for non-steam networking): Peer management
+///
+/// This layer is only responsible for properly keeping track of raw connections to other machines (players or lobby server),
+/// though this connection is also responsible for its own encryption.
+///
+/// The main concepts are:
+/// - the PeerId object, each instance of which uniquely identifies another machine on the network, and (if transmitted over the network) allows to create a connection to said machine.
+///   The PeerManager class is also responsible for serialising/deserialising one or many PeerIds at once.
+/// - Sending/Receiving packets: this sends/returns the byte sequences used by the higher layers of the network stack, and uses a PeerId object to choose/tell which other machine is involved.
+///   packets (visible outside of that layer) come in three flavours:
+///   - Reliable (ordered, reliable packets to/from a single machine),
+///   - Unreliable (unordered, unreliable packets to/from a single machine),
+///   - Broadcast (unordered, unreliable packets to many machines, but from a single one), only used in LAN contexts to advertise one's presence
+/// - though, internally other packet types exist, to make the peer management system itself work
+/// - IP tools: a lot of utility functions to deal with IP EndPoints are present in this base class.
+
 
 namespace RainMeadow.Shared
 {
@@ -17,6 +34,12 @@ namespace RainMeadow.Shared
         {
             return Equals(obj as PeerId);
         }
+        /// like Equals, but assumes "other" *might* be an updated version of this, and if it is, update this to match
+        public virtual bool CompareAndUpdate(PeerId other) {
+            // though be default there is nothing to update
+            return Equals(other);
+        }
+
         public static bool operator ==(PeerId lhs, PeerId rhs)
         {
             return lhs is null ? rhs is null : lhs.Equals(rhs);
@@ -221,6 +244,14 @@ namespace RainMeadow.Shared
             OnPeerForgotten.Invoke(peerId);
         }
 
+        public delegate void ConfirmCallback_t(string template, string data, ref bool canProceed);
+        public event ConfirmCallback_t ConfirmCallback = delegate { };
+        public bool Run_ConfirmCallback(string template, string data) {
+            bool canProceed = true;
+            ConfirmCallback.Invoke(template, data, ref canProceed);
+            return canProceed;
+        }
+
         public /*static*/ abstract void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true);
         public /*static*/ abstract PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho);
         public /*static*/ abstract void SerializePeerId(BinaryWriter writer, PeerId peerId);
@@ -230,7 +261,7 @@ namespace RainMeadow.Shared
         public abstract void ForgetPeer(PeerId peerId);
         public abstract void ForgetAllPeers();
         public abstract void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false);
-        public abstract byte[]? Recieve(out PeerId? sender);
+        public abstract byte[]? Receive(out PeerId? sender);
         public abstract void Update();
 
         public bool IsDisposed { get => _isDisposed; }

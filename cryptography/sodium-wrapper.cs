@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 // using System.Net;
 // using System.Linq;
@@ -29,8 +30,13 @@ namespace Sodium {
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         public unsafe static extern int sodium_memcmp(/*readonly*/ byte* b1_, /*readonly*/ byte* b2_, UIntPtr len);
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
-        public unsafe static extern char *sodium_bin2hex(char* hex, UIntPtr hex_maxlen,
+        public unsafe static extern byte* sodium_bin2hex(/*utf8*/ byte* hex, UIntPtr hex_maxlen,
                             /*readonly*/ byte* bin, UIntPtr bin_len);
+        [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
+        public unsafe static extern int sodium_hex2bin(byte* bin, UIntPtr bin_maxlen,
+                           /*readonly utf8*/ byte* hex, UIntPtr hex_len,
+                           /*readonly*/ byte* ignore, UIntPtr* bin_len,
+                           byte** hex_end);
 
         // ////////
         // secure transmission "box"
@@ -48,7 +54,7 @@ namespace Sodium {
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern UIntPtr crypto_box_beforenmbytes();
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
-        public unsafe static extern char* crypto_box_primitive();
+        public unsafe static extern /*utf8*/ byte* crypto_box_primitive();
 
         // then the functions that actually do stuff
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -91,7 +97,7 @@ namespace Sodium {
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         // public static extern UIntPtr  crypto_sign_bytes();
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
-        // public static extern const char *crypto_sign_primitive();
+        // public static extern const /*utf8*/ byte *crypto_sign_primitive();
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         // public unsafe static extern int crypto_sign_keypair(byte *pk, byte *sk);
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -142,18 +148,36 @@ namespace Sodium {
             // _initialised = true;
         }
 
-        public static char[] BoxPubKeyToHex(byte[] boxPk) {
-            char[] buff = new char[2*BOX_PK_SIZE+1];
+        public static string BoxPubKeyToHex(byte[] boxPk) {
+            byte[] buff = new byte[2*BOX_PK_SIZE+1];
+
             unsafe{
-                fixed (char* p_buff = buff)
-                fixed (byte* p_pk = boxPk){
+                fixed (byte* p_buff = &buff[0])
+                fixed (byte* p_pk = &boxPk[0]){
                     sodium_bin2hex(
                         p_buff, (UIntPtr)(2*BOX_PK_SIZE+1),
                         p_pk, (UIntPtr)(BOX_PK_SIZE)
                     );
                 }
             }
-            return buff;
+            return Encoding.UTF8.GetString(buff).Substring(0, 2*BOX_PK_SIZE);
+        }
+
+        public static byte[] BoxPubKeyFromHex(string boxPkRepr) {
+            byte[] key = new byte[BOX_PK_SIZE];
+            byte[] buff = Encoding.UTF8.GetBytes(boxPkRepr.ToCharArray());
+
+            unsafe{
+                fixed (byte* p_buff = &buff[0])
+                fixed (byte* p_pk = &key[0]){
+                    int errCode = sodium_hex2bin(
+                        p_pk, (UIntPtr)(BOX_PK_SIZE),
+                        p_buff, (UIntPtr)(2*BOX_PK_SIZE),
+                        null, null, null
+                    );
+                }
+            }
+            return key;
         }
 
     }

@@ -277,7 +277,7 @@ namespace RainMeadow.Shared
             foreach (var peer in peersToRemove) ForgetPeer(peer);
         }
 
-        public override byte[]? Recieve(out PeerId? sender) {
+        public override byte[]? Receive(out PeerId? sender) {
             sender = null;
 
             if (socket.Available != 0) {

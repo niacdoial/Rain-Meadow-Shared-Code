@@ -86,14 +86,14 @@ namespace RainMeadow.Shared
         void ResetKeys() {
             unsafe
             {
-                fixed (byte* p_conn_sk = this.connection_sk, p_conn_pk = this.connection_pk)
+                fixed (byte* p_conn_sk = &this.connection_sk[0], p_conn_pk = &this.connection_pk[0])
                 {
                     int errCode = LibSodium.crypto_box_keypair(p_conn_pk, p_conn_sk);
                     if (errCode !=0) {
                         throw new Exception("failed to generate connection keypair: errno "+errCode.ToString());
                     }
                 }
-                // fixed (byte* p_id_sk = this.identity_sk, p_id_pk = this.identity_pk)
+                // fixed (byte* p_id_sk = &this.identity_sk[0], p_id_pk = &this.identity_pk[0])
                 // {
                 //     int errCode = LibSodium.crypto_sign_keypair(p_id_pk, p_id_sk);
                 //     if (errCode !=0) {
@@ -104,10 +104,13 @@ namespace RainMeadow.Shared
         }
 
         void EnsurePeerSharedKey(RemotePeer peer) {
+            if (peer.id == null) {
+                throw new Exception("no id in peer???");
+            }
             if (peer.connection_computed_k == null) {
                 peer.connection_computed_k = new byte[LibSodium.BOX_DERVK_SIZE];
                 unsafe {
-                    fixed(byte* p_conn_sk = this.connection_sk, p_peer_pk = peer.id.boxPubkey, p_shk = peer.connection_computed_k){
+                    fixed(byte* p_conn_sk = &this.connection_sk[0], p_peer_pk = &peer.id.boxPubkey[0], p_shk = &peer.connection_computed_k[0]){
                         int errCode = LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk);
                         if (errCode !=0) {
                             throw new Exception("failed to precompute shared communication key: errno "+errCode.ToString());
@@ -127,7 +130,7 @@ namespace RainMeadow.Shared
             byte[] cleartext = new byte[clearSize];
             EnsurePeerSharedKey(peer);
             unsafe {
-                fixed (byte* p_shk = peer.connection_computed_k, p_once = nonce, p_clear = cleartext, p_cypher = cyphertext) {
+                fixed (byte* p_shk = &peer.connection_computed_k[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
                     int errCode = LibSodium.crypto_box_open_easy_afternm(p_clear, p_cypher, (ulong)cyphertext.Length, p_once, p_shk);
                     if (errCode !=0) {
                         return null;
@@ -139,17 +142,20 @@ namespace RainMeadow.Shared
 
         byte[]? SodiumEncodePacket(byte[] cleartext, byte[] nonce, int clearSize, RemotePeer peer) {
             if (clearSize != cleartext.Length) {
+                throw new Exception("clearsize mismatch");
                 return null;
             }
             if (LibSodium.BOX_NONCE_SIZE != nonce.Length) {
+                throw new Exception("nonce mismatch");
                 return null;
             }
             byte[] cyphertext = new byte[clearSize + LibSodium.BOX_MAC_SIZE];
             EnsurePeerSharedKey(peer);
             unsafe {
-                fixed (byte* p_shk = peer.connection_computed_k, p_once = nonce, p_clear = cleartext, p_cypher = cyphertext) {
+                fixed (byte* p_shk = &peer.connection_computed_k[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
                     int errCode = LibSodium.crypto_box_easy_afternm(p_cypher, p_clear, (ulong)cleartext.Length, p_once, p_shk);
                     if (errCode !=0) {
+                        throw new Exception("failure " +errCode.ToString());
                         return null;
                     }
                 }
@@ -159,7 +165,7 @@ namespace RainMeadow.Shared
         byte[] GetNonce() {
             byte[] nonce = new byte[LibSodium.BOX_NONCE_SIZE];
             unsafe {
-                fixed (byte* p_once = nonce) {
+                fixed (byte* p_once = &nonce[0]) {
                     LibSodium.randombytes_buf(p_once, (UIntPtr)LibSodium.BOX_NONCE_SIZE);
                 }
             }
