@@ -36,6 +36,14 @@ namespace RainMeadow.Shared
             if (endPoint is null) return false;
             return BasePeerManager.isEndpointLocal(endPoint);
         }
+        // Blackhole Endpoint
+        // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
+        public static IPEndPoint BlackHoleEndPoint = new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999);
+        public override bool isBlackHole()
+        {
+            if (endPoint is null) return false;
+            return BasePeerManager.CompareIPEndpoints(endPoint, BlackHoleEndPoint);
+        }
     }
 
     public class UDPPeerManager : BasePeerManager
@@ -47,10 +55,6 @@ namespace RainMeadow.Shared
             Reliable, // and ordered!
             HeartBeat,  // also serves as acknowledgement
         }
-
-        // Blackhole Endpoint
-        // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
-        public readonly PeerId BlackHole = new UDPPeerId(new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999));
 
         class RemotePeer {
             public IPEndPoint PeerEndPoint { get; set; } = new IPEndPoint(IPAddress.Any, 0);
@@ -67,6 +71,7 @@ namespace RainMeadow.Shared
 
 
         public UDPPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
+            BlackHole = new UDPPeerId(UDPPeerId.BlackHoleEndPoint);
             InitSocket();
         }
 
@@ -102,7 +107,7 @@ namespace RainMeadow.Shared
                 "[IP: is machine local: {0}, is network local: {1}, is devnull: {2}]",
                 peerId.isLoopback(),
                 isEndpointLocal(peerId.endPoint),
-                (endPoint == BlackHole)
+                endPoint.isBlackHole()
             );
         }
 

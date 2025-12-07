@@ -47,6 +47,7 @@ namespace RainMeadow.Shared
         public static bool operator !=(PeerId lhs, PeerId rhs) => !(lhs == rhs);
         public abstract bool isLoopback();
         public abstract bool isNetworkLocal();
+        public abstract bool isBlackHole();
     }
     public abstract class BasePeerManager : IDisposable
     {
@@ -232,7 +233,7 @@ namespace RainMeadow.Shared
         }
 
 
-        public /*static*/ readonly PeerId BlackHole;
+        public /*static readonly*/ PeerId BlackHole;
         public abstract PeerId GetSelf();
         public /*static*/ abstract PeerId[] GetBroadcastPeerIDs();
         public /*static*/ abstract PeerId? GetPeerIdByName(string name);
