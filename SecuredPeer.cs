@@ -228,14 +228,14 @@ namespace RainMeadow.Shared
         byte[] connection_sk;
         byte[] connection_pk;
 
-        public enum OuterPacketType: byte {
+        public enum PacketSecurity: byte {
             CleartextBroadcast_v1 = 0,
             Boxed_v1,
             BoxedWithPubKey_v1,
             RequestPubKey_v1,
             VersionError = 255,  // to be sent as an answer to a packet of wrong version
         }
-        public enum InnerPacketType : byte {
+        public enum RawPacketType : byte {
             Unreliable_v1 = 0,
             Reliable_v1, // and ordered!
             HeartBeat_v1,  // also serves as acknowledgement
@@ -482,14 +482,14 @@ namespace RainMeadow.Shared
                 switch (packet_type) {
                     case PacketType.UnreliableBroadcast:
                         secPeerId.ValidateCryptStatus(false, true);
-                        SendRaw(packet, peer, InnerPacketType.Unreliable_v1, OuterPacketType.CleartextBroadcast_v1);
+                        SendRaw(packet, peer, RawPacketType.Unreliable_v1, PacketSecurity.CleartextBroadcast_v1);
                         break;
                     case PacketType.Unreliable:
                         secPeerId.ValidateCryptStatus(false, false);
                         if (begin_conversation) {
-                            SendRaw(packet, peer, InnerPacketType.Unreliable_v1, OuterPacketType.BoxedWithPubKey_v1);
+                            SendRaw(packet, peer, RawPacketType.Unreliable_v1, PacketSecurity.BoxedWithPubKey_v1);
                         } else {
-                            SendRaw(packet, peer, InnerPacketType.Unreliable_v1, OuterPacketType.Boxed_v1);
+                            SendRaw(packet, peer, RawPacketType.Unreliable_v1, PacketSecurity.Boxed_v1);
                         }
                         break;
                     case PacketType.Reliable:
@@ -502,9 +502,9 @@ namespace RainMeadow.Shared
                         if (!peer.outgoingpacket.Any()) {
                             // send immediately if there are no pending packets
                             if (begin_conversation) {
-                                SendRaw(packet, peer, InnerPacketType.Reliable_v1, OuterPacketType.BoxedWithPubKey_v1);
+                                SendRaw(packet, peer, RawPacketType.Reliable_v1, PacketSecurity.BoxedWithPubKey_v1);
                             } else {
-                                SendRaw(packet, peer, InnerPacketType.Reliable_v1, OuterPacketType.Boxed_v1);
+                                SendRaw(packet, peer, RawPacketType.Reliable_v1, PacketSecurity.Boxed_v1);
                             }
                         }
                         peer.outgoingpacket.Enqueue(packet);
@@ -513,15 +513,15 @@ namespace RainMeadow.Shared
             } else SharedCodeLogger.Error("Failed to get remote peer");
         }
 
-        void SendRaw(byte[] packet, RemotePeer peer, InnerPacketType innerType, OuterPacketType outerType) {
+        void SendRaw(byte[] packet, RemotePeer peer, RawPacketType innerType, PacketSecurity outerType) {
             // if the peer is not yet ready for encrypted communications, make sure not to do anything until that part is set up
             if (peer.id.status == SecuredPeerId.PeerStatus.Unknown) {
-                if (innerType == InnerPacketType.Unreliable_v1) {
+                if (innerType == RawPacketType.Unreliable_v1) {
                     SharedCodeLogger.Error("Discarding unreliable packet for peer with unknown public key");
                 }
                 SharedCodeLogger.Debug("sending pubkey request to " + describePeerId(peer.id));
                 var buffer = new byte[connection_pk.Length +1];
-                buffer[0] = (byte)OuterPacketType.RequestPubKey_v1;
+                buffer[0] = (byte)PacketSecurity.RequestPubKey_v1;
                 Buffer.BlockCopy(connection_pk, 0, buffer, 1, connection_pk.Length);
                 socket.SendTo(
                     buffer,
@@ -533,13 +533,13 @@ namespace RainMeadow.Shared
             // first compute the "added bits" prepended in cleartext
             int extraLength = 1;
             switch (innerType) {
-            case InnerPacketType.Unreliable_v1:
-            case InnerPacketType.VersionError:
+            case RawPacketType.Unreliable_v1:
+            case RawPacketType.VersionError:
                 break;
-            case InnerPacketType.Reliable_v1:
+            case RawPacketType.Reliable_v1:
                 extraLength = 1 + sizeof(ulong);
                 break;
-            case InnerPacketType.HeartBeat_v1:
+            case RawPacketType.HeartBeat_v1:
                 extraLength = 1 + sizeof(ulong);
                 break;
             default:
@@ -554,15 +554,15 @@ namespace RainMeadow.Shared
             using (BinaryWriter writer = new(stream))
             {
                 writer.Write((byte)innerType);
-                if (innerType == InnerPacketType.Reliable_v1)
+                if (innerType == RawPacketType.Reliable_v1)
                 {
                     writer.Write(peer.wanted_acknowledgement + 1);
                 }
-                else if (innerType == InnerPacketType.HeartBeat_v1)
+                else if (innerType == RawPacketType.HeartBeat_v1)
                 {
                     writer.Write(peer.remote_acknowledgement);
                 }
-                if (innerType != InnerPacketType.VersionError) {
+                if (innerType != RawPacketType.VersionError) {
                     writer.Write(packet);
                 }
 
@@ -571,17 +571,17 @@ namespace RainMeadow.Shared
 
             // then compute the "added bits" added before the cyphertext (extraLength includes the fact that cyphertext is longer than cleartext)
             switch (outerType) {
-            case OuterPacketType.Boxed_v1:
+            case PacketSecurity.Boxed_v1:
                 extraLength = 1 + sizeof(UInt16) + LibSodium.BOX_NONCE_SIZE + LibSodium.BOX_MAC_SIZE;
                 break;
-            case OuterPacketType.BoxedWithPubKey_v1:
+            case PacketSecurity.BoxedWithPubKey_v1:
                 extraLength = 1 + LibSodium.BOX_PK_SIZE + sizeof(UInt16) + LibSodium.BOX_NONCE_SIZE + LibSodium.BOX_MAC_SIZE;
                 break;
-            case OuterPacketType.CleartextBroadcast_v1:
+            case PacketSecurity.CleartextBroadcast_v1:
                 extraLength = 1 + sizeof(UInt16);
                 break;
-            case OuterPacketType.VersionError:
-                socket.SendTo(new byte[1]{(byte)OuterPacketType.VersionError}, peer.id.endPoint);
+            case PacketSecurity.VersionError:
+                socket.SendTo(new byte[1]{(byte)PacketSecurity.VersionError}, peer.id.endPoint);
                 return;
                 break;
             default:
@@ -592,11 +592,11 @@ namespace RainMeadow.Shared
             using (BinaryWriter writer = new(stream))
             {
                 writer.Write((byte)outerType);
-                if (outerType == OuterPacketType.CleartextBroadcast_v1) {
+                if (outerType == PacketSecurity.CleartextBroadcast_v1) {
                     writer.Write((UInt16)clearLength);
                     writer.Write(clearText);
                 } else {
-                    if (outerType == OuterPacketType.BoxedWithPubKey_v1) {
+                    if (outerType == PacketSecurity.BoxedWithPubKey_v1) {
                         writer.Write(connection_pk);
                     }
                     writer.Write((UInt16)clearLength);
@@ -652,9 +652,9 @@ namespace RainMeadow.Shared
                     if (peer.outgoingpacket.Any())
                     {
                         if (peer.need_begin_conversation_ack) {
-                            SendRaw(peer.outgoingpacket.Peek(), peer, InnerPacketType.Reliable_v1, OuterPacketType.BoxedWithPubKey_v1);
+                            SendRaw(peer.outgoingpacket.Peek(), peer, RawPacketType.Reliable_v1, PacketSecurity.BoxedWithPubKey_v1);
                         } else {
-                            SendRaw(peer.outgoingpacket.Peek(), peer, InnerPacketType.Reliable_v1, OuterPacketType.Boxed_v1);
+                            SendRaw(peer.outgoingpacket.Peek(), peer, RawPacketType.Reliable_v1, PacketSecurity.Boxed_v1);
                         }
                     }
                     else
@@ -662,8 +662,8 @@ namespace RainMeadow.Shared
                         SendRaw(
                             Array.Empty<byte>(),
                             peer,
-                            InnerPacketType.HeartBeat_v1,
-                            OuterPacketType.Boxed_v1
+                            RawPacketType.HeartBeat_v1,
+                            PacketSecurity.Boxed_v1
                         );
                     }
                 }
@@ -700,50 +700,50 @@ namespace RainMeadow.Shared
                 using (MemoryStream stream = new(rawBuffer, 0, len, false))
                 using (BinaryReader reader = new(stream)) {
                     byte outTyRaw = reader.ReadByte();
-                    OuterPacketType? outerType = null;
-                    try {outerType = (OuterPacketType)outTyRaw;}
+                    PacketSecurity? outerType = null;
+                    try {outerType = (PacketSecurity)outTyRaw;}
                     catch {}
                     byte[] pubKey = null;
 
                     switch (outerType) {
-                    case OuterPacketType.Boxed_v1:
+                    case PacketSecurity.Boxed_v1:
                         if (remoteId == null) {
                             SharedCodeLogger.Error("Received encrypted packet from unknown peer: nothing to do");
                             return null;
                         }
                         remoteId.ValidateCryptStatus(true, false);
                         break;
-                    case OuterPacketType.CleartextBroadcast_v1:
+                    case PacketSecurity.CleartextBroadcast_v1:
                         if (remoteId != null) {
                             SharedCodeLogger.Error("Existing peer should not switch to cleartext communications!");
                             return null;
                         }
                         remoteId.ValidateCryptStatus(true, true);
                         break;
-                    case OuterPacketType.BoxedWithPubKey_v1:
+                    case PacketSecurity.BoxedWithPubKey_v1:
                         pubKey = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
                         peer = OnReceivePubkey(ref remoteId, ipsender, pubKey);
                         break;
-                    case OuterPacketType.RequestPubKey_v1:
+                    case PacketSecurity.RequestPubKey_v1:
                         pubKey = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
                         peer = OnReceivePubkey(ref remoteId, ipsender, pubKey);
                         remoteId.ValidateCryptStatus(false, false); // also validate this remoteId as a recipient, as OnReceivePubkey validates it as a sender
                         if (peer != null) {
                             SharedCodeLogger.Debug("answering to pubkey request");
-                            SendRaw(new byte[0], peer, InnerPacketType.Unreliable_v1, OuterPacketType.BoxedWithPubKey_v1);
+                            SendRaw(new byte[0], peer, RawPacketType.Unreliable_v1, PacketSecurity.BoxedWithPubKey_v1);
                         } else {
                             SharedCodeLogger.Debug("invalid pubkey request");
                         }
                         return null;
                         break;
-                    case OuterPacketType.VersionError:
+                    case PacketSecurity.VersionError:
                         SharedCodeLogger.Error("Peer does not know our packet format! make sure all peers use compatible versions of Rain Meadow");
                         return null;
                         break;
                     default:
                         SharedCodeLogger.Error("unknown packet outerType: " + outTyRaw.ToString() + "!");
                         remoteId.ValidateCryptStatus(false, false);
-                        SendRaw(new byte[0], GetRemotePeer(remoteId), InnerPacketType.Unreliable_v1, OuterPacketType.VersionError);
+                        SendRaw(new byte[0], GetRemotePeer(remoteId), RawPacketType.Unreliable_v1, PacketSecurity.VersionError);
                         return null;
                         break;
                     }
@@ -758,7 +758,7 @@ namespace RainMeadow.Shared
                     if (sender == null) {
                         throw new Exception("sanity check failed: sender ID somehow not set");
                     }
-                    if (outerType == OuterPacketType.CleartextBroadcast_v1) {
+                    if (outerType == PacketSecurity.CleartextBroadcast_v1) {
                         cleartextBuffer = reader.ReadBytes((int)packetSize);
                     } else {
                         byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
@@ -778,14 +778,14 @@ namespace RainMeadow.Shared
                 using (MemoryStream stream = new(cleartextBuffer, 0, cleartextBuffer.Length, false))
                 using (BinaryReader reader = new(stream)) {
                     byte inTyRaw = reader.ReadByte();
-                    InnerPacketType? innerType = null;
-                    try {innerType = (InnerPacketType)inTyRaw;}
+                    RawPacketType? innerType = null;
+                    try {innerType = (RawPacketType)inTyRaw;}
                     catch {}
                     if (innerType==null) {
                         SharedCodeLogger.Error("unknown packet innerType:" + inTyRaw.ToString() +"!");
-                        SendRaw(new byte[0], peer, InnerPacketType.VersionError, OuterPacketType.Boxed_v1);
+                        SendRaw(new byte[0], peer, RawPacketType.VersionError, PacketSecurity.Boxed_v1);
                         return null;
-                    } else if (innerType == InnerPacketType.VersionError) {
+                    } else if (innerType == RawPacketType.VersionError) {
                         SharedCodeLogger.Error("Peer does not know our packet format! make sure all peers use compatible versions of Rain Meadow");
                         return null;
                     }
@@ -793,10 +793,10 @@ namespace RainMeadow.Shared
                     if (peer != null) peer.TicksSinceLastIncomingPacket = 0;
 
                     switch (innerType) {
-                        case InnerPacketType.Unreliable_v1:
+                        case RawPacketType.Unreliable_v1:
                             return reader.ReadBytes(cleartextBuffer.Length - 1);
 
-                        case InnerPacketType.Reliable_v1:
+                        case RawPacketType.Reliable_v1:
 
                             ulong wanted_ack = reader.ReadUInt64();
                             byte[]? new_data = null;
@@ -812,11 +812,11 @@ namespace RainMeadow.Shared
                             SendRaw(
                                 Array.Empty<byte>(),
                                 peer,
-                                InnerPacketType.HeartBeat_v1,
-                                OuterPacketType.Boxed_v1
+                                RawPacketType.HeartBeat_v1,
+                                PacketSecurity.Boxed_v1
                             );
                             return new_data;
-                        case InnerPacketType.HeartBeat_v1:
+                        case RawPacketType.HeartBeat_v1:
                             peer.need_begin_conversation_ack = false;
                             ulong remote_ack = reader.ReadUInt64();
                             if (EventMath.IsNewer(remote_ack, peer.wanted_acknowledgement)) {

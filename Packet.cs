@@ -25,6 +25,7 @@ namespace RainMeadow.Shared
             BeginRouterSession,
             EndRouterSession,
             RouterModifyPlayerList,
+            PlayerJoiningDecision,
             JoinRouterLobby,
             RouteSessionData,
             RouterChatMessage,
