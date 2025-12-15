@@ -282,22 +282,37 @@ namespace RainMeadow.Shared
             foreach (var peer in peersToRemove) ForgetPeer(peer);
         }
 
-        public override byte[]? Receive(out PeerId? sender) {
+        public override byte[]? Receive(out PeerId? sender, bool blocking=false) {
             sender = null;
 
-            if (socket.Available != 0) {
+            if ((!blocking) && socket.Available != 0) {
                 EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
 
                 byte[] buffer;
                 int len = 0;
+
+                if (blocking) {
+                    socket.Blocking = true;
+                    socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime;
+                }
                 try {
-                    buffer = new byte[socket.Available];
+                    if (socket.Available > MTU) {
+                        buffer = new byte[socket.Available];
+                    } else {
+                        buffer = reusableRecvBuffer;
+                    }
                     len = socket.ReceiveFrom(buffer, ref senderEndPoint);
                 } catch (Exception except) {
-                    SharedCodeLogger.Error(except);
+                    if (except is SocketException skEx && skEx.ErrorCode != 10060)
+                    {
+                        // if the error is not a timeout
+                        SharedCodeLogger.Error(except);
+                    }
                     return null;
                 }
-
+                if (blocking) {
+                    socket.Blocking = false;
+                }
 
                 IPEndPoint? ipsender = senderEndPoint as IPEndPoint;
                 if (ipsender == null) return null;

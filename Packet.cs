@@ -120,6 +120,7 @@ namespace RainMeadow.Shared
                     Type.PublishRouterLobby => new PublishRouterLobby(),
                     Type.RouterChatMessage => new RouterChatMessage(),
                     Type.RouterCustomPacket => new RouterCustomPacket(),
+                    Type.PlayerJoiningDecision => new PlayerJoiningDecision(),
                     _ => null
                 };
             }

@@ -672,10 +672,10 @@ namespace RainMeadow.Shared
             foreach (var peer in peersToRemove) ForgetPeer(peer);
         }
 
-        public override byte[]? Receive(out PeerId? sender) {
+        public override byte[]? Receive(out PeerId? sender, bool blocking=false) {
             sender = null;
 
-            if (socket.Available == 0) {
+            if ((!blocking) && socket.Available == 0) {
                 return null;
             }
 
@@ -684,13 +684,29 @@ namespace RainMeadow.Shared
             byte[] rawBuffer;
             byte[] cleartextBuffer;
             int len = 0;
+            if (blocking) {
+                socket.Blocking = true;
+                socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime;
+            }
             try {
-                rawBuffer = new byte[socket.Available];
+                if (socket.Available > MTU) {
+                    rawBuffer = new byte[socket.Available];
+                } else {
+                    rawBuffer = reusableRecvBuffer;
+                }
                 len = socket.ReceiveFrom(rawBuffer, ref senderEndPoint);
             } catch (Exception except) {
-                SharedCodeLogger.Error(except);
+                if (except is SocketException skEx && skEx.ErrorCode != 10060)
+                {
+                    // if the error is not a timeout
+                    SharedCodeLogger.Error(except);
+                }
                 return null;
             }
+            if (blocking) {
+                socket.Blocking = false;
+            }
+
             IPEndPoint? ipsender = senderEndPoint as IPEndPoint;
             if (ipsender == null) return null;
             SecuredPeerId remoteId = GetIdFromEndpoint(ipsender);

@@ -61,8 +61,10 @@ namespace RainMeadow.Shared
         public Socket socket;
         public int port;
 
+        public const int MTU = 1500;  // 1500 is the MTU for general internet communications
         public const int DEFAULT_PORT = 8720;
         public const int FIND_PORT_ATTEMPTS = 8; // 8 players somehow hosting from the same machine is ridiculous.
+        public byte[] reusableRecvBuffer = new byte[MTU];
 
         public void InitSocket(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             try {
@@ -262,7 +264,7 @@ namespace RainMeadow.Shared
         public abstract void ForgetPeer(PeerId peerId);
         public abstract void ForgetAllPeers();
         public abstract void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false);
-        public abstract byte[]? Receive(out PeerId? sender);
+        public abstract byte[]? Receive(out PeerId? sender, bool blocking=false);
         public abstract void Update();
 
         public bool IsDisposed { get => _isDisposed; }
