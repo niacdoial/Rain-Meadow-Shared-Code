@@ -14,6 +14,7 @@ namespace RainMeadow.Shared
         public enum Operation : byte
         {
             Add,
+            Update,  // special Add that updates existing players if found
             Remove
         }
 
@@ -50,7 +51,7 @@ namespace RainMeadow.Shared
             writer.Write((byte)operation);
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
-            if (operation == Operation.Add) {
+            if (operation != Operation.Remove) {
                 SharedPlatform.PlatformPeerManager.SerializePeerIDs(writer, endPoints.ToArray(), processingEndpoint, false);
                 foreach (string name in userNames) {
                     writer.WriteNullTerminatedString(name);
@@ -70,7 +71,7 @@ namespace RainMeadow.Shared
                 routerIds.Add(reader.ReadUInt16());
             }
 
-            if (operation == Operation.Add) {
+            if (operation != Operation.Remove) {
                 endPoints = new List<PeerId> (SharedPlatform.PlatformPeerManager.DeserializePeerIDs(reader, SharedPlatform.PlatformPeerManager.BlackHole));
                 userNames = new(count);
                 for (ushort i=0; i<count ; i++) {
