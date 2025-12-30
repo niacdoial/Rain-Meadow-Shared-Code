@@ -81,18 +81,20 @@ namespace RainMeadow.Shared
     //     - another idea: generate a "proxying key"
 
 
-    public partial class SecuredPeerManager : BasePeerManager
+    public partial class SecuredPeerManager : IDisposable
     {
-        void ResetKeys() {
+        byte[] private_key;
+        byte[] public_key;
+        void ResetKeys() 
+        {
             unsafe
             {
-                fixed (byte* p_conn_sk = &this.connection_sk[0], p_conn_pk = &this.connection_pk[0])
+                fixed (byte *p_conn_sk = this.private_key, p_conn_pk = this.public_key)
                 {
                     int errCode = LibSodium.crypto_box_keypair(p_conn_pk, p_conn_sk);
-                    if (errCode !=0) {
-                        throw new Exception("failed to generate connection keypair: errno "+errCode.ToString());
-                    }
+                    if (errCode != 0) throw new Exception("failed to generate connection keypair: errno "+errCode.ToString());
                 }
+                
                 // fixed (byte* p_id_sk = &this.identity_sk[0], p_id_pk = &this.identity_pk[0])
                 // {
                 //     int errCode = LibSodium.crypto_sign_keypair(p_id_pk, p_id_sk);
@@ -103,70 +105,75 @@ namespace RainMeadow.Shared
             }
         }
 
-        void EnsurePeerSharedKey(RemotePeer peer) {
-            if (peer.id == null) {
-                throw new Exception("no id in peer???");
-            }
-            if (peer.connection_computed_k == null) {
-                peer.connection_computed_k = new byte[LibSodium.BOX_DERVK_SIZE];
-                unsafe {
-                    fixed(byte* p_conn_sk = &this.connection_sk[0], p_peer_pk = &peer.id.boxPubkey[0], p_shk = &peer.connection_computed_k[0]){
-                        int errCode = LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk);
-                        if (errCode !=0) {
-                            throw new Exception("failed to precompute shared communication key: errno "+errCode.ToString());
-                        }
+        void ComputeSharedKey(RemotePeer peer) {
+            if (peer.shared_key == null) 
+            {
+                peer.shared_key = new byte[LibSodium.BOX_DERVK_SIZE];
+                unsafe 
+                {
+                    fixed(byte *p_conn_sk = this.private_key, p_peer_pk = peer.id.publicKey, p_shk = peer.shared_key) 
+                    {
+                        if (LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk) != 0) 
+                            throw new Exception("failed to precompute shared communication key");
                     }
                 }
             }
         }
 
-        byte[]? SodiumDecodePacket(byte[] cyphertext, byte[] nonce, int clearSize, RemotePeer peer) {
-            if (clearSize + LibSodium.BOX_MAC_SIZE != cyphertext.Length) {
-                return null;
-            }
-            if (LibSodium.BOX_NONCE_SIZE != nonce.Length) {
-                return null;
-            }
-            byte[] cleartext = new byte[clearSize];
-            EnsurePeerSharedKey(peer);
+        byte[]? SodiumDecodePacket(byte[] cyphertext, byte[] nonce, RemotePeer peer) {
+            if (cyphertext.Length <= LibSodium.BOX_MAC_SIZE) throw new InvalidProgrammerException("cypher text size less then MAC size");
+            byte[] cleartext = new byte[cyphertext.Length - LibSodium.BOX_MAC_SIZE];
+            ComputeSharedKey(peer);
             unsafe {
-                fixed (byte* p_shk = &peer.connection_computed_k[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
-                    int errCode = LibSodium.crypto_box_open_easy_afternm(p_clear, p_cypher, (ulong)cyphertext.Length, p_once, p_shk);
-                    if (errCode !=0) {
+                fixed (byte *p_shk = peer.shared_key, p_once = nonce, p_clear = cleartext, p_cypher = cyphertext)
+                {
+                    if (LibSodium.crypto_box_open_easy_afternm(p_clear, p_cypher, (ulong)cyphertext.Length, p_once, p_shk) != 0) 
                         return null;
-                    }
                 }
             }
             return cleartext;
         }
 
-        byte[]? SodiumEncodePacket(byte[] cleartext, byte[] nonce, int clearSize, RemotePeer peer) {
-            if (clearSize != cleartext.Length) {
-                throw new Exception("clearsize mismatch");
-                return null;
-            }
-            if (LibSodium.BOX_NONCE_SIZE != nonce.Length) {
-                throw new Exception("nonce mismatch");
-                return null;
-            }
-            byte[] cyphertext = new byte[clearSize + LibSodium.BOX_MAC_SIZE];
-            EnsurePeerSharedKey(peer);
+        byte[]? SodiumEncodePacket(byte[] cleartext, byte[] nonce, RemotePeer peer) 
+        {
+            if (cleartext.Length == 0) throw new InvalidProgrammerException("Attempted to encode empty packet");
+            if (LibSodium.BOX_NONCE_SIZE != nonce.Length) throw new InvalidProgrammerException("nonce length mismatch");
+            byte[] cyphertext = new byte[cleartext.Length + LibSodium.BOX_MAC_SIZE];
+            ComputeSharedKey(peer);
             unsafe {
-                fixed (byte* p_shk = &peer.connection_computed_k[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
-                    int errCode = LibSodium.crypto_box_easy_afternm(p_cypher, p_clear, (ulong)cleartext.Length, p_once, p_shk);
-                    if (errCode !=0) {
-                        throw new Exception("failure " +errCode.ToString());
-                        return null;
-                    }
+                fixed (byte* p_shk = &peer.shared_key[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
+                    if (LibSodium.crypto_box_easy_afternm(p_cypher, p_clear, (ulong)cleartext.Length, p_once, p_shk) != 0) 
+                        throw new Exception("crypto_box_easy_afternm failed");
                 }
             }
             return cyphertext;
         }
-        byte[] GetNonce() {
+        byte[] MakeUnreliableNonce() {
             byte[] nonce = new byte[LibSodium.BOX_NONCE_SIZE];
             unsafe {
                 fixed (byte* p_once = &nonce[0]) {
                     LibSodium.randombytes_buf(p_once, (UIntPtr)LibSodium.BOX_NONCE_SIZE);
+                }
+            }
+            return nonce;
+        }
+
+        byte[] MakeReliableNonce(ulong order) {
+            byte[] nonce = BitConverter.GetBytes(order);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(nonce);
+            }
+
+            IntPtr initialSize = LibSodium.BOX_NONCE_SIZE - nonce.Length;
+            Array.Resize(ref nonce, LibSodium.BOX_NONCE_SIZE);
+
+            if (initialSize < 0) return nonce;
+            unsafe 
+            {
+                fixed (byte* p_once = nonce)
+                {
+                    LibSodium.sodium_memzero(p_once + initialSize, (UIntPtr)(LibSodium.BOX_NONCE_SIZE - initialSize));
                 }
             }
             return nonce;
