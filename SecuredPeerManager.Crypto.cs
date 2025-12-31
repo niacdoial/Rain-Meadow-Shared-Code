@@ -87,6 +87,9 @@ namespace RainMeadow.Shared
         byte[] public_key;
         void ResetKeys() 
         {
+            if (public_key is null) public_key = new byte[LibSodium.BOX_PK_SIZE];
+            if (private_key is null) private_key = new byte[LibSodium.BOX_SK_SIZE];
+            
             unsafe
             {
                 fixed (byte *p_conn_sk = this.private_key, p_conn_pk = this.public_key)
