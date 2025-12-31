@@ -103,6 +103,8 @@ namespace RainMeadow.Shared
                 //     }
                 // }
             }
+
+            Me.publicKey = public_key;
         }
 
         void ComputeSharedKey(RemotePeer peer) {
@@ -165,9 +167,8 @@ namespace RainMeadow.Shared
                 Array.Reverse(nonce);
             }
 
-            IntPtr initialSize = LibSodium.BOX_NONCE_SIZE - nonce.Length;
+            int initialSize = LibSodium.BOX_NONCE_SIZE - nonce.Length;
             Array.Resize(ref nonce, LibSodium.BOX_NONCE_SIZE);
-
             if (initialSize < 0) return nonce;
             unsafe 
             {

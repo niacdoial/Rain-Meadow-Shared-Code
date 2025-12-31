@@ -20,11 +20,11 @@ namespace RainMeadow.Shared
 
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
-        public List<PeerId> endPoints { get; private set; }
+        public List<SecuredPeerId> endPoints { get; private set; }
         public List<string> userNames { get; private set; }
 
         public RouterModifyPlayerListPacket ( ) { }
-        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<PeerId> endPoints, List<string> userNames)
+        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId> endPoints, List<string> userNames)
         {
             if (routerIds.Count == endPoints.Count && routerIds.Count == userNames.Count) {
             } else {
@@ -41,7 +41,7 @@ namespace RainMeadow.Shared
         {
             this.operation = operation;
             this.routerIds = routerIds;
-            this.endPoints = new List<PeerId> {};
+            this.endPoints = new List<SecuredPeerId> {};
             this.userNames = new List<string> {};
         }
 
@@ -51,11 +51,10 @@ namespace RainMeadow.Shared
             writer.Write((byte)operation);
             writer.Write((ushort)routerIds.Count);
             foreach (ushort id in routerIds) writer.Write(id);
-            if (operation != Operation.Remove) {
-                SharedPlatform.PlatformPeerManager.SerializePeerIDs(writer, endPoints.ToArray(), processingEndpoint, false);
-                foreach (string name in userNames) {
-                    writer.WriteNullTerminatedString(name);
-                }
+            if (operation != Operation.Remove) 
+            {
+                SecuredPeerId.SerializePeerIDs(writer, endPoints.ToArray(), processingEndpoint!, false);
+                foreach (string name in userNames) writer.Write(name);
             }
         }
 
@@ -71,11 +70,12 @@ namespace RainMeadow.Shared
                 routerIds.Add(reader.ReadUInt16());
             }
 
-            if (operation != Operation.Remove) {
-                endPoints = new List<PeerId> (SharedPlatform.PlatformPeerManager.DeserializePeerIDs(reader, SharedPlatform.PlatformPeerManager.BlackHole));
+            if (operation != Operation.Remove) 
+            {
+                endPoints = new List<SecuredPeerId>(SecuredPeerId.DeserializePeerIDs(reader, processingEndpoint!));
                 userNames = new(count);
                 for (ushort i=0; i<count ; i++) {
-                    userNames.Add(reader.ReadNullTerminatedString());
+                    userNames.Add(reader.ReadString());
                 }
             } else {
                 endPoints = new(0);

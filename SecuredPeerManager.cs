@@ -99,11 +99,13 @@ namespace RainMeadow.Shared
             BoxedWithPubKey = Boxed | RequestPubKey, // 11
         }
 
-        
+        public readonly SecuredPeerId Me;
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             InitSocket();
             // this.identity_pk = new byte[LibSodium.SIGN_PK_SIZE];
             // this.identity_sk = new byte[LibSodium.SIGN_SK_SIZE];
+
+            Me = new SecuredPeerId(new IPEndPoint(IPAddress.Loopback, port), null);
             this.ResetKeys();
         }
 
@@ -121,60 +123,9 @@ namespace RainMeadow.Shared
         }
 
 
-
         public string GetGenericInviteCode() {
             var invitecode = LibSodium.BoxPubKeyToHex(this.public_key);
             return $"{invitecode}@X.X.X.X:{this.port}";
-        }
-
-
-
-        List<RemotePeer> peers = new();
-        RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false) 
-        {
-            RemotePeer? peer = peers.FirstOrDefault(x => x.id.Equals(peerId));
-            if (make && peer == null) 
-            {
-                peerId.ValidateCryptStatus(false, false, true);
-                peer = new RemotePeer(this, peerId);
-
-                if (peerId.Status != SecuredPeerId.PeerStatus.ClearTextOnly) 
-                {
-                    peers.Add(peer);  // Cleartext (broadcast) peers are not to be remembered
-                }
-            }
-
-            return peer;
-        }
-
-        public delegate void OnPeerForgotten_t(RemotePeer peerId);
-        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
-
-
-        void ForgetPeer(RemotePeer peer)
-        {
-            if (peers.Contains(peer))
-            {
-                peer.Dispose();
-                peers.Remove(peer);
-                OnPeerForgotten.Invoke(peer);
-            }
-        }
-
-        public void ForgetPeer(SecuredPeerId peerId) 
-        {
-            foreach (RemotePeer peer in peers.Where(x => peerId == x.id)) 
-            {
-                ForgetPeer(peer);
-            }
-        }
-
-        public void TerminateAllPeers()
-        {
-            foreach (RemotePeer peer in peers.ToArray())
-            {
-                peer.Terminate();
-            }
         }
 
         public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true) 

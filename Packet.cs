@@ -15,6 +15,8 @@ namespace RainMeadow.Shared
             JoinLobby,
             ModifyPlayerList,
             Session,
+
+            [Obsolete("Use Termination instead")]
             SessionEnd,
             RequestLobby,
             InformLobby,
@@ -23,7 +25,9 @@ namespace RainMeadow.Shared
 
             // Router stuff
             BeginRouterSession,
-            EndRouterSession,
+
+            [Obsolete("Use Termination instead")]
+            EndRouterSession, 
             RouterModifyPlayerList,
             PlayerJoiningDecision,
             JoinRouterLobby,
@@ -37,7 +41,7 @@ namespace RainMeadow.Shared
         }
 
         public delegate void BuildPacket_t(Type type, ref Packet? packet);
-        public static event BuildPacket_t? packetFactory;
+        public static event BuildPacket_t packetFactory = delegate { };
 
         public abstract Type type { get; }
         public ushort size = 0;
@@ -46,12 +50,10 @@ namespace RainMeadow.Shared
         public virtual void Deserialize(BinaryReader reader) { } // Read from bytes
         public virtual void Process() { } // Do the payload
 
-        public PeerId processingEndpoint;
+        public SecuredPeerId? processingEndpoint;
 
 
-
-
-        public static void Encode(Packet packet, BinaryWriter writer, PeerId toEndpoint)
+        public static void Encode(Packet packet, BinaryWriter writer, SecuredPeerId toEndpoint)
         {
             packet.processingEndpoint = toEndpoint;
 
@@ -67,7 +69,7 @@ namespace RainMeadow.Shared
             writer.Seek(packet.size, SeekOrigin.Current);
         }
 
-        public static void Decode(BinaryReader reader, PeerId fromEndpoint)
+        public static void Decode(BinaryReader reader, SecuredPeerId fromEndpoint)
         {
             Type type = (Type)reader.ReadByte();
             // RainMeadow.Debug($"Recieved {type}");
@@ -112,7 +114,7 @@ namespace RainMeadow.Shared
                 packet = type switch
                 {
                     Type.BeginRouterSession => new BeginRouterSession(),
-                    Type.EndRouterSession => new EndRouterSession(),
+                    // Type.EndRouterSession => new EndRouterSession(),
                     Type.RouterModifyPlayerList => new RouterModifyPlayerListPacket(),
                     Type.JoinRouterLobby => new JoinRouterLobby(),
                     Type.RouteSessionData => new RouteSessionData(),

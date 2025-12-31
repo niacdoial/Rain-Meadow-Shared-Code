@@ -41,6 +41,20 @@ namespace RainMeadow.Shared
         public static SecuredPeerId MakeClearText(IPEndPoint endPoint) => new SecuredPeerId(endPoint, null, true);
         public static SecuredPeerId MakePending(IPEndPoint endPoint) => new SecuredPeerId(endPoint, null, false); 
         public bool Equals(SecuredPeerId? id) => id == null? false : SharedPlatform.CompareIPEndpoints(this.endPoint, id.endPoint);
+        public bool CompareAndUpdate(SecuredPeerId? other) {
+            // note that this equality function just means "are we sure this is the same peer?"
+            if (other is SecuredPeerId id && Equals(id))
+            {
+                if (this.Status == PeerStatus.PendingPublicKey)
+                {
+                    this.publicKey = other.publicKey;
+                }
+                
+                return true;
+            }
+            return false;
+        }
+
         public bool IsLoopback() => SharedPlatform.IsLoopback(endPoint.Address);
         public bool IsNetworkLocal() => SharedPlatform.IsEndpointLocal(endPoint);
         public void ValidateCryptStatus(bool peerIsSender = false, bool forClearText = false, bool internalChecksOnly = false) 
@@ -316,8 +330,9 @@ namespace RainMeadow.Shared
                 {
                     lastOutgoingTick += SharedPlatform.heartbeatTime;
                     tickSinceLastOutgoing = tick - lastOutgoingTick;
-                    if (outgoingPackets.TryPeek(out OutgoingPacket packet))
+                    if (outgoingPackets.Any())
                     {
+                        OutgoingPacket packet = outgoingPackets.Peek();
                         SecurityFlags flags = 0;
 
                         if (packet.attempts > 0)
@@ -382,5 +397,55 @@ namespace RainMeadow.Shared
                 Dispose();
             }
         }
+
+            List<RemotePeer> peers = new();
+            public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false) 
+            {
+                RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
+                if (make && peer == null) 
+                {
+                    peerId.ValidateCryptStatus(false, false, true);
+                    peer = new RemotePeer(this, peerId);
+
+                    if (peerId.Status != SecuredPeerId.PeerStatus.ClearTextOnly) 
+                    {
+                        peers.Add(peer);  // Cleartext (broadcast) peers are not to be remembered
+                    }
+                }
+
+                return peer;
+            }
+
+            public delegate void OnPeerForgotten_t(RemotePeer peerId);
+            public event OnPeerForgotten_t OnPeerForgotten = delegate { };
+
+            void ForgetPeer(RemotePeer peer)
+            {
+                if (peers.Contains(peer))
+                {
+                    peer.Dispose();
+                    peers.Remove(peer);
+                    OnPeerForgotten.Invoke(peer);
+                }
+            }
+
+            public void ForgetPeer(SecuredPeerId peerId) 
+            {
+                foreach (RemotePeer peer in peers.Where(x => peerId == x.id)) 
+                {
+                    ForgetPeer(peer);
+                }
+            }
+
+            public void TerminateAllPeers()
+            {
+                foreach (RemotePeer peer in peers.ToArray())
+                {
+                    peer.Terminate();
+                }
+            }
+
+            public bool AnyPendingTermination() => peers.Any(x => x.IsTerminating);
+
     }
 }
