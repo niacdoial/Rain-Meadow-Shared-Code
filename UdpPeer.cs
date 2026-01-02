@@ -292,26 +292,34 @@ namespace RainMeadow.Shared
                 int len = 0;
 
                 if (blocking) {
+                    List<Socket> listenList = new();
+                    listenList.Add(socket);
                     socket.Blocking = true;
-                    socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime;
+                    try {
+                        Socket.Select(listenList, null, null, (int)SharedPlatform.heartbeatTime * 1000);
+                    } catch (Exception except) {
+                        if (except is SocketException skEx && skEx.ErrorCode == 10060)
+                        {}
+                        else {
+                            // if the error is not a timeout
+                            SharedCodeLogger.Error(except);
+                        }
+                        return null;
+                    } finally {
+                        socket.Blocking = false;
+                    }
+                    if (socket.Available==0) return null;
+                }
+                if (socket.Available > MTU) {
+                    buffer = new byte[socket.Available];
+                } else {
+                    buffer = reusableRecvBuffer;
                 }
                 try {
-                    if (socket.Available > MTU) {
-                        buffer = new byte[socket.Available];
-                    } else {
-                        buffer = reusableRecvBuffer;
-                    }
                     len = socket.ReceiveFrom(buffer, ref senderEndPoint);
                 } catch (Exception except) {
-                    if (except is SocketException skEx && skEx.ErrorCode != 10060)
-                    {
-                        // if the error is not a timeout
-                        SharedCodeLogger.Error(except);
-                    }
+                    SharedCodeLogger.Error(except);
                     return null;
-                }
-                if (blocking) {
-                    socket.Blocking = false;
                 }
 
                 IPEndPoint? ipsender = senderEndPoint as IPEndPoint;
