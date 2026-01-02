@@ -269,7 +269,7 @@ namespace RainMeadow.Shared
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             BlackHole = SecuredPeerId.MakeClearText(SecuredPeerId.BlackHoleEndPoint);
 
-            InitSocket();
+            InitSocket(default_port, port_attempts);
             // this.identity_pk = new byte[LibSodium.SIGN_PK_SIZE];
             // this.identity_sk = new byte[LibSodium.SIGN_SK_SIZE];
             this.connection_pk = new byte[LibSodium.BOX_PK_SIZE];

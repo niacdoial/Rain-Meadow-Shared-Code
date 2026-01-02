@@ -72,7 +72,7 @@ namespace RainMeadow.Shared
 
         public UDPPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             BlackHole = new UDPPeerId(UDPPeerId.BlackHoleEndPoint);
-            InitSocket();
+            InitSocket(default_port, port_attempts);
         }
 
         public override PeerId GetSelf() {
@@ -285,7 +285,7 @@ namespace RainMeadow.Shared
         public override byte[]? Receive(out PeerId? sender, bool blocking=false) {
             sender = null;
 
-            if ((!blocking) && socket.Available != 0) {
+            if (blocking || (socket.Available != 0)) {
                 EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
 
                 byte[] buffer;
