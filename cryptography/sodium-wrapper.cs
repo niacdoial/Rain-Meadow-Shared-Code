@@ -30,6 +30,8 @@ namespace Sodium {
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         public unsafe static extern int sodium_memcmp(/*readonly*/ byte* b1_, /*readonly*/ byte* b2_, UIntPtr len);
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
+
+        // Encoding
         public unsafe static extern byte* sodium_bin2hex(/*utf8*/ byte* hex, UIntPtr hex_maxlen,
                             /*readonly*/ byte* bin, UIntPtr bin_len);
         [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -87,7 +89,27 @@ namespace Sodium {
                                         UInt64 clen, /*readonly*/ byte *n,
                                         /*readonly*/ byte *k);
 
+        enum Base64Varient
+        {
+            ORIGINAL = 1, // 01
+            ORIGINAL_NO_PADDING = 3, // 11
+            URLSAFE =  5, // 101
+            URLSAFE_NO_PADDING = 7 // 111
+        };
 
+        [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern UIntPtr sodium_base64_encoded_len(UIntPtr size, int variant);
+
+        [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
+        public unsafe static extern int sodium_bin2base64(byte *b64, UIntPtr b64_maxlen, byte *bin, UIntPtr bin_len, int varient);
+
+
+        [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
+        public unsafe static extern UIntPtr sodium_base642bin(byte *bin, UIntPtr bin_maxlen, byte *b64,
+                      UIntPtr b64_len, byte *ignore, UIntPtr *bin_len,
+                      byte **b64_end, int variant);
+                                              
+        
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
         // public static extern UIntPtr crypto_sign_secretkeybytes();
         // [DllImport("libsodium.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -148,36 +170,36 @@ namespace Sodium {
             // _initialised = true;
         }
 
-        public static string BoxPubKeyToHex(byte[] boxPk) {
-            byte[] buff = new byte[2*BOX_PK_SIZE+1];
+        public static string BinToHex(byte[] binary) {
+            byte[] buff = new byte[2*binary.Length+1];
 
             unsafe{
-                fixed (byte* p_buff = &buff[0])
-                fixed (byte* p_pk = &boxPk[0]){
+                fixed (byte* p_buff = buff)
+                fixed (byte* p_pk = binary){
                     sodium_bin2hex(
-                        p_buff, (UIntPtr)(2*BOX_PK_SIZE+1),
-                        p_pk, (UIntPtr)(BOX_PK_SIZE)
+                        p_buff, (UIntPtr)buff.Length,
+                        p_pk, (UIntPtr)binary.Length
                     );
                 }
             }
-            return Encoding.UTF8.GetString(buff).Substring(0, 2*BOX_PK_SIZE);
+            return Encoding.UTF8.GetString(buff);
         }
 
-        public static byte[] BoxPubKeyFromHex(string boxPkRepr) {
-            byte[] key = new byte[BOX_PK_SIZE];
-            byte[] buff = Encoding.UTF8.GetBytes(boxPkRepr.ToCharArray());
+        public static byte[] HexToBin(string hex) {
+            byte[] binary = new byte[(hex.Length-1)/2];
+            byte[] buff = Encoding.UTF8.GetBytes(hex.ToCharArray());
 
             unsafe{
                 fixed (byte* p_buff = &buff[0])
-                fixed (byte* p_pk = &key[0]){
+                fixed (byte* p_pk = &binary[0]){
                     int errCode = sodium_hex2bin(
-                        p_pk, (UIntPtr)(BOX_PK_SIZE),
-                        p_buff, (UIntPtr)(2*BOX_PK_SIZE),
+                        p_pk, (UIntPtr)binary.Length,
+                        p_buff, (UIntPtr)buff.Length,
                         null, null, null
                     );
                 }
             }
-            return key;
+            return binary;
         }
 
     }

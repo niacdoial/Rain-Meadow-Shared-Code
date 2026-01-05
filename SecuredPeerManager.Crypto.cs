@@ -107,6 +107,12 @@ namespace RainMeadow.Shared
                 // }
             }
 
+            foreach (RemotePeer peer in peers)
+            {
+                peer.shared_key = null;
+                peer.acked_pubkey = false;
+            }
+
             Me.publicKey = public_key;
         }
 

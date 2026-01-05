@@ -78,10 +78,11 @@ namespace RainMeadow.Shared {
         }
 
 
-        public static bool IsEndpointLocal(IPEndPoint endpoint) 
+        public static bool IsEndpointLocal(IPAddress address) 
         {
-            var addressbytes = endpoint.Address.GetAddressBytes();
-            if (endpoint.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) 
+            if (IsLoopback(address)) return true;
+            var addressbytes = address.GetAddressBytes();
+            if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) 
             {
                 if (addressbytes[0] == 10) return true;
                 if (addressbytes[0] == 127) return true;
@@ -91,8 +92,6 @@ namespace RainMeadow.Shared {
 
                 if (addressbytes[0] == 192)
                 if (addressbytes[1] == 168) return true;
-                
-                if (endpoint.Address.Equals(IPAddress.Loopback)) return true;
             }
             return false;
         }

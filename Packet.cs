@@ -16,7 +16,7 @@ namespace RainMeadow.Shared
             ModifyPlayerList,
             Session,
 
-            [Obsolete("Use Termination instead")]
+            [Obsolete("Stop communication to disconnect instead")]
             SessionEnd,
             RequestLobby,
             InformLobby,
@@ -26,7 +26,7 @@ namespace RainMeadow.Shared
             // Router stuff
             BeginRouterSession,
 
-            [Obsolete("Use Termination instead")]
+            [Obsolete("Stop communication to disconnect instead")]
             EndRouterSession, 
             RouterModifyPlayerList,
             PlayerJoiningDecision,
@@ -83,7 +83,7 @@ namespace RainMeadow.Shared
             if (packet == null)
             {
                 // throw new Exception($"Undetermined packet type ({type}) received");
-                RainMeadow.Error($"Bad Packet Type Recieved {type}");
+                RainMeadow.Error($"Bad Packet Type Recieved {(int)type}");
                 return;
             }
 
