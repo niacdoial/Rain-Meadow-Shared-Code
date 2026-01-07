@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Net;
-using MonoMod.Utils;
 
 namespace RainMeadow.Shared
 {
@@ -23,7 +22,7 @@ namespace RainMeadow.Shared
         {
             base.Serialize(writer);
             writer.Write(exposeIPAddress);
-            writer.WriteNullTerminatedString(name);
+            writer.Write(name);
         }
 
         public override void Deserialize(BinaryReader reader)
