@@ -29,7 +29,7 @@ namespace RainMeadow.Shared
         {
             base.Deserialize(reader);
             exposeIPAddress = reader.ReadBoolean();
-            name = reader.ReadNullTerminatedString();
+            name = reader.ReadString();
         }
 
         static public event Action<BeginRouterSession>? ProcessAction = null;
