@@ -34,6 +34,6 @@ namespace RainMeadow.Shared {
         static partial void getTimeoutTime(ref ulong TimeoutTime);
         static partial void getTimeMS(ref ulong time);
 
-        public static BasePeerManager PlatformPeerManager = null;
+        public static SecuredPeerManager PlatformPeerManager = null;
     }
 }

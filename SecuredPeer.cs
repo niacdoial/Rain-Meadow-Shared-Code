@@ -6,7 +6,6 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-//using System.Security.Cryptography;
 using Sodium;
 
 /// //////////////////////////////////////////
@@ -74,155 +73,6 @@ using Sodium;
 namespace RainMeadow.Shared
 {
 
-    public class SecuredPeerId : PeerId {
-
-        // TODO: ClearTextOnly reception is jank: lobby enumeration needs to feed the pubkeys
-        public enum PeerStatus: byte {
-            ClearTextOnly = 0,  // network-local broadcast purposes, also allowed for the BlackHole placeholder
-            Unknown,  // one current use case: connect to a server then asking the user to double-check the pubkey
-            Connected,  // Has a known connection pubkey
-        }
-
-        public PeerStatus status;
-        public IPEndPoint endPoint;
-        public byte[] boxPubkey;
-
-        public SecuredPeerId(IPEndPoint endPoint, byte[] boxPubkey) {
-            this.status = PeerStatus.Connected;
-            this.endPoint = endPoint;
-            this.boxPubkey = boxPubkey;
-            if (boxPubkey != null && boxPubkey.Length != LibSodium.BOX_PK_SIZE) {
-                throw new Exception("malformed pubkey: wrong size");
-            }
-        }
-        public static SecuredPeerId MakeClearText(IPEndPoint endPoint) {
-            SecuredPeerId newSelf = new SecuredPeerId(endPoint, null);
-            newSelf.status = PeerStatus.ClearTextOnly;
-            return newSelf;
-        }
-        public static SecuredPeerId MakeUnknown(IPEndPoint endPoint) {
-            SecuredPeerId newSelf = new SecuredPeerId(endPoint, null);
-            newSelf.status = PeerStatus.Unknown;
-            return newSelf;
-        }
-
-        public bool Equals(SecuredPeerId id)
-        {
-            if (this.status == PeerStatus.Connected && id.status == PeerStatus.Connected) {
-                return ComparePubKeys(this.boxPubkey, id.boxPubkey);
-            } else if (this.status == PeerStatus.Unknown && id.status == PeerStatus.Unknown) {
-                return  BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
-            } else if (this.status == PeerStatus.ClearTextOnly && id.status == PeerStatus.ClearTextOnly) {
-                return  BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
-            } else {
-                return false;
-            }
-        }
-
-        public static bool ComparePubKeys(byte[] first, byte[] second) {
-            unsafe {
-                fixed (byte* p_thPk = first, p_otPk = second) {
-                    return LibSodium.sodium_memcmp(p_thPk, p_otPk, (UIntPtr)LibSodium.BOX_PK_SIZE)==0;
-                }
-            }
-        }
-
-        public override bool Equals(PeerId other)
-        {
-            // note that this equality function just means "are we sure this is the same peer?"
-            if (other is SecuredPeerId id)
-            {
-                return Equals(id);
-            }
-            return false;
-        }
-        public override bool CompareAndUpdate(PeerId other) {
-            // note that this equality function just means "are we sure this is the same peer?"
-            if (other is SecuredPeerId id)
-            {
-                if (this.status == PeerStatus.Unknown && id.status == PeerStatus.Connected) {
-                    if (BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint)) {
-                        this.boxPubkey = id.boxPubkey;
-                        this.status = PeerStatus.Connected;
-                        return true;
-                    } else {
-                        return false;
-                    }
-                } else {
-                    return Equals(id);
-                }
-            }
-            return false;
-        }
-
-        public override bool isLoopback()
-        {
-            // TODO: determine how a self PeerId is emitted
-            if (endPoint is null) return false;
-            if (SharedPlatform.PlatformPeerManager?.port != endPoint.Port) return false;
-            return BasePeerManager.isLoopback(endPoint.Address);
-        }
-        public override bool isNetworkLocal()
-        {
-            if (endPoint is null) return false;
-            return BasePeerManager.isEndpointLocal(endPoint);
-        }
-
-        // Blackhole Endpoint
-        // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
-        public static IPEndPoint BlackHoleEndPoint = new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999);
-        public override bool isBlackHole()
-        {
-            // note that BlackHole PeerIDs are allowed to have pubkeys, because they are a signal that packets to them must be proxied
-            return BasePeerManager.CompareIPEndpoints(endPoint, BlackHoleEndPoint);
-        }
-        public void ValidateCryptStatus(bool peerIsSender = false, bool forClearText = false, bool internalChecksOnly = false) {
-            switch (this.status) {
-                case PeerStatus.Unknown:
-                    if (peerIsSender && !internalChecksOnly) {
-                        throw new Exception("assertion failed: unknown-encryption peers can only be message recipients, not senders");
-                    }
-                    if (forClearText && !internalChecksOnly) {
-                        throw new Exception("assertion failed: peer must be suited for encrypted");
-                    }
-                    if (isBlackHole()) {
-                        throw new Exception("assertion failed: BlackHole peers must be cleartext");
-                    } else if (this.endPoint.Address.Equals(IPAddress.Broadcast) ) {
-                        throw new Exception("assertion failed: Broadcast peers must be cleartext");
-                    }
-                    break;
-                case PeerStatus.Connected:
-                    if (forClearText && !internalChecksOnly) {
-                        throw new Exception("assertion failed: peer must be suited for encrypted");
-                    }
-                    if (isBlackHole()) {
-                        throw new Exception("assertion failed: BlackHole peers must be cleartext");
-                    } else if (this.endPoint.Address.Equals(IPAddress.Broadcast) ) {
-                        throw new Exception("assertion failed: Broadcast peers must be cleartext");
-                    }
-                    if ((this.boxPubkey?.Length ?? 0) != LibSodium.BOX_PK_SIZE) {
-                        throw new Exception("assertion failed: Correctly initialised pubkey");
-                    }
-                    break;
-                case PeerStatus.ClearTextOnly:
-                    if (! (forClearText || internalChecksOnly)) {
-                        throw new Exception("assertion failed: peer must be suited for cleartext communications");
-                    }
-                    if ((peerIsSender || internalChecksOnly) && isNetworkLocal()) {
-                        // only network-local packet entry
-                        return;
-                    } else if (this.endPoint.Address.Equals(IPAddress.Broadcast) ) {
-                        return;
-                    }
-                    throw new Exception("assertion failed: Cleartext peers can only exist for local-network broacasts");
-                    break;
-                default:
-                    throw new Exception("bad code update: failed to handle new PeerId status");
-                    break;
-            }
-        }
-    }
-
     public partial class SecuredPeerManager : BasePeerManager, IDisposable
     {
         byte[] connection_sk;
@@ -242,29 +92,6 @@ namespace RainMeadow.Shared
             VersionError = 255,
         }
 
-        class RemotePeer : IDisposable {
-            // data for connection itself
-            public SecuredPeerId id;
-            public byte[] connection_computed_k;
-
-
-            public ulong TicksSinceLastIncomingPacket = 0;
-            public ulong OutgoingPacketAcummulator = 0;
-
-            public Queue<byte[]> outgoingpacket = new Queue<byte[]>();
-            public ulong wanted_acknowledgement = 0;  // the 'packet ID' of the last reliable packet ack'd by peer (1-indexed)
-            public ulong remote_acknowledgement = 0;  // the 'packet ID' of the last reliable packet recv'd by us  (1-indexed)
-            public bool need_begin_conversation_ack = true;
-
-            void IDisposable.Dispose() {
-                unsafe {
-                    fixed (byte* p_csk = this.connection_computed_k) {
-                        LibSodium.sodium_memzero(p_csk, (UIntPtr)LibSodium.BOX_DERVK_SIZE);
-                    }
-                }
-            }
-
-        }
 
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             BlackHole = SecuredPeerId.MakeClearText(SecuredPeerId.BlackHoleEndPoint);
@@ -275,202 +102,6 @@ namespace RainMeadow.Shared
             this.connection_pk = new byte[LibSodium.BOX_PK_SIZE];
             this.connection_sk = new byte[LibSodium.BOX_SK_SIZE];
             this.ResetKeys();
-        }
-
-        public override PeerId GetSelf() {
-            return new SecuredPeerId(
-                new IPEndPoint(
-                    BasePeerManager.getInterfaceAddresses()[0],
-                    this.port
-                ),
-                this.connection_pk
-            );
-        }
-        public override PeerId[] GetBroadcastPeerIDs() {
-            List<PeerId> broadcastables = new List<PeerId>();
-            for (int broadcast_port = BasePeerManager.DEFAULT_PORT;
-                broadcast_port < (BasePeerManager.FIND_PORT_ATTEMPTS + BasePeerManager.DEFAULT_PORT);
-                broadcast_port++)
-            {
-                broadcastables.Add(SecuredPeerId.MakeClearText(new(IPAddress.Broadcast, broadcast_port)));
-            }
-            return broadcastables.ToArray();
-        }
-
-        public /*static*/ override PeerId? GetPeerIdByName(string name) {
-            var parts = name.Split('@');
-            IPEndPoint? endPoint = null;
-            byte[] pubKey = new byte[0];
-
-            if (parts.Count() == 2) {
-                if (parts[0].Length != 2*LibSodium.BOX_PK_SIZE) return null;
-                endPoint = GetEndPointByName(parts[1]);
-                if (endPoint is null) return null;
-                pubKey = LibSodium.BoxPubKeyFromHex(parts[0]);
-                return new SecuredPeerId(endPoint, pubKey);
-            } else if (parts.Count() == 1) {
-                endPoint = GetEndPointByName(parts[0]);
-                if (endPoint is null) return null;
-                return SecuredPeerId.MakeUnknown(endPoint);
-            } else {
-                return null;
-            }
-        }
-
-        SecuredPeerId GetIdFromEndpoint(IPEndPoint endPoint) {
-            RemotePeer? peer = peers.FirstOrDefault(x => CompareIPEndpoints(x.id.endPoint, endPoint));
-            if (peer == null) {
-                return null;
-            } else {
-                return peer.id;
-            }
-        }
-
-        public /*static*/ override string describePeerId(PeerId endPoint, PeerId? serverEndPoint=null){
-            var peerId = endPoint as SecuredPeerId;
-            if (peerId is null) {
-                return "[Bad PeerId type, expected Secured PeerId]";
-            }
-            var pubkeyString = "[NULL]";
-            if (peerId.boxPubkey != null) {
-                pubkeyString = LibSodium.BoxPubKeyToHex(peerId.boxPubkey);
-            }
-
-            return String.Format(
-                "[pubkey: {3}, IP: [is machine local: {0}, is network local: {1}, is devnull: {2}]]",
-                peerId.isLoopback(),
-                isEndpointLocal(peerId.endPoint),
-                endPoint.isBlackHole(),
-                pubkeyString
-            );
-        }
-
-        public string GetGenericInviteCode() {
-            var invitecode = LibSodium.BoxPubKeyToHex(this.connection_pk);
-            return $"{invitecode}@X.X.X.X:{this.port}";
-        }
-
-        /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
-        /// The functions that do not need a separate mechanism to deal with this.
-        public /*static*/ override void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true) {
-            // note that outside of Blackhole, only status:connected peerIds can be serialized
-            var filteredPeerIDs = endPoints.Select(x => x as SecuredPeerId)
-                .Where(x=> x != null).ToArray();
-            // TODO: eventually apply the encrypted-only restriction on blackhole IDs too, since they are blackhole-as-request-for-proxy
-            var badIDs = filteredPeerIDs.Where(x => !(x.isBlackHole() || x.status == SecuredPeerId.PeerStatus.Connected)).ToArray();
-            if (badIDs.Count()>0) {
-                foreach (SecuredPeerId point in badIDs) {
-                    SharedCodeLogger.Error("Bad ID: " + point.status.ToString() + " : " + describePeerId(point));
-                }
-                throw new Exception("Serialisation only allowed if all peers serialised have known pubkeys!");
-            }
-            var dest = addressedto as SecuredPeerId;
-            if (dest is null) {return;}
-
-            writer.Write(includeme);
-            writer.Write((int)filteredPeerIDs.Length);
-            foreach (SecuredPeerId point in filteredPeerIDs) {
-                if (point == addressedto) {
-                    SerializeIPEndPoint(writer, new IPEndPoint(IPAddress.Loopback, point.endPoint.Port));
-                    continue;
-                }
-                SerializeIPEndPoint(writer, point.endPoint);
-                if (!point.isBlackHole()) {
-                    // TODO: eventually redo logic to include/not include pubkey in serialisation,
-                    // because of blackhole-as-request-for-proxy PeerIDs
-                    if (point.boxPubkey.Length != LibSodium.BOX_PK_SIZE) {
-                        throw new Exception("bad pubkey length, something fucked up bad");
-                    }
-                    writer.Write(point.boxPubkey);
-                }
-            }
-        }
-
-        public /*static*/ override PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho) {
-            SecuredPeerId? sender = fromWho as SecuredPeerId;
-            if (sender is null) {throw new Exception("bad PeerId as sender");}
-
-            bool includesender = reader.ReadBoolean();
-            SecuredPeerId[] ret = new SecuredPeerId[reader.ReadInt32() + (includesender? 1 : 0)];
-            int i = 0;
-            if (includesender) {
-                ret[i] = sender;
-                ++i;
-            }
-
-            for (; i != ret.Length; i++) {
-                IPEndPoint endPoint = DeserializeIPEndPoint(reader);
-                if (CompareIPEndpoints(endPoint, new IPEndPoint(IPAddress.Loopback, this.port))) {
-                    ret[i] = new SecuredPeerId(endPoint, this.connection_pk);
-                } else if (CompareIPEndpoints(endPoint, ((SecuredPeerId)BlackHole).endPoint)) {
-                    // TODO: eventually change this when we will want pubkeys transmitted in blackhole-as-request-for-proxy PeerIDs.
-                    ret[i] = (SecuredPeerId)BlackHole;
-                } else {
-                    byte[] pubkey = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
-                    ret[i] = new SecuredPeerId(endPoint, pubkey);
-                }
-            }
-            return ret.ToArray();
-        }
-
-        public /*static*/ override void SerializePeerId(BinaryWriter writer, PeerId peerId) {
-            SecuredPeerId? truePeerId = peerId as SecuredPeerId;
-            if (truePeerId is null) {throw new Exception("bad PeerId to serialize");}
-            if (truePeerId.status != SecuredPeerId.PeerStatus.Connected) {throw new Exception("cannot serialize peer with no pubkey");}
-            BasePeerManager.SerializeIPEndPoint(writer, truePeerId.endPoint);
-            if (truePeerId.boxPubkey.Length != LibSodium.BOX_PK_SIZE) {
-                throw new Exception("bad pubkey length, something fucked up bad");
-            }
-            writer.Write(truePeerId.boxPubkey);
-        }
-        public /*static*/ override PeerId DeserializePeerId(BinaryReader reader) {
-            return new SecuredPeerId(
-                BasePeerManager.DeserializeIPEndPoint(reader),
-                reader.ReadBytes(LibSodium.BOX_PK_SIZE)
-            );
-        }
-
-        List<RemotePeer> peers = new();
-        bool _allow_unsecure_creation = false;
-        RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool makeOrUpdate = false) {
-            if (makeOrUpdate) {
-                RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
-                if (peer == null) {
-                    peerId.ValidateCryptStatus(false, false, true);
-                    peer = new RemotePeer() {id = peerId};
-                    if (peerId.status != SecuredPeerId.PeerStatus.ClearTextOnly) {
-                        peers.Add(peer);  // Cleartext (=broadcast) peers are not to be remembered
-                    }
-                }
-                return peer;
-            } else {
-                return peers.FirstOrDefault(x => x.id == peerId);
-            }
-        }
-
-        public override void EnsureRemotePeerCreated(PeerId peerId) {
-            SecuredPeerId? securedPeerId = peerId as SecuredPeerId;
-            if (securedPeerId == null) return;
-            GetRemotePeer(securedPeerId, true);
-        }
-
-        void ForgetPeer(RemotePeer peer) {
-            peers.Remove(peer);  // remove first, in case this peer's removal callback recurses into here
-            Run_OnPeerForgotten(peer.id);
-        }
-        public override void ForgetPeer(PeerId peerId) {
-            var secPeerId = peerId as SecuredPeerId;
-            var remove_peers = peers.FindAll(x => secPeerId == x.id);
-            foreach (RemotePeer peer in remove_peers) {
-                ForgetPeer(peer);
-            }
-        }
-
-        public override void ForgetAllPeers() {
-            var remove_peers = peers.ToList();
-            foreach (RemotePeer peer in remove_peers) {
-                ForgetPeer(peer);
-            }
         }
 
         public override void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false) {
@@ -516,6 +147,9 @@ namespace RainMeadow.Shared
         void SendRaw(byte[] packet, RemotePeer peer, RawPacketType innerType, PacketSecurity outerType) {
             // if the peer is not yet ready for encrypted communications, make sure not to do anything until that part is set up
             if (peer.id.status == SecuredPeerId.PeerStatus.Unknown) {
+                if (!allowPeerCreationWithoutKey) {
+                    throw new Exception("Asking a peer for their pubkey is insecure and not allowed in the current context");
+                }
                 if (innerType == RawPacketType.Unreliable_v1) {
                     SharedCodeLogger.Error("Discarding unreliable packet for peer with unknown public key");
                 }
@@ -878,6 +512,9 @@ namespace RainMeadow.Shared
                 return GetRemotePeer(newId, true);
             } else {
                 if (currentPeerId.status == SecuredPeerId.PeerStatus.Unknown) {
+                    if (!allowPeerCreationWithoutKey) {
+                        throw new Exception("unknown-status peer are not to be used in this context, nor upgraded into connected-status");
+                    }
                     // if we connected to a peer without knowing its pubkey, we need to ask the user if the key's correct
                     if (Run_ConfirmCallback("Is the following public key the one you expect for this lobby?", LibSodium.BoxPubKeyToHex(pubKey))) {
                         currentPeerId.status = SecuredPeerId.PeerStatus.Connected;
