@@ -221,7 +221,7 @@ namespace RainMeadow.Shared
                             writer.Write(nonce);
                         }
 
-                        SharedCodeLogger.Debug($"to {peer}: nonce: {LibSodium.BinToHex(nonce!)}, cleartext: {LibSodium.BinToHex(packet)}");
+                        // SharedCodeLogger.Debug($"to {peer}: nonce: {LibSodium.BinToHex(nonce!)}, cleartext: {LibSodium.BinToHex(packet)}");
                         var cypherText = SodiumEncodePacket(packet, nonce!, peer);
                         if (cypherText == null) {
                             SharedCodeLogger.Error("Failed to encrypt packet");
@@ -232,7 +232,7 @@ namespace RainMeadow.Shared
                     }
                     else
                     {
-                        SharedCodeLogger.Debug($"from {peer}: cleartext: {LibSodium.BinToHex(packet)}, ");
+                        // SharedCodeLogger.Debug($"from {peer}: cleartext: {LibSodium.BinToHex(packet)}, ");
                         writer.Write(packet);
                     }
                 }
