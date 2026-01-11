@@ -53,7 +53,7 @@ namespace RainMeadow.Shared
         public virtual void Deserialize(BinaryReader reader) { } // Read from bytes
         public virtual void Process() { } // Do the payload
 
-        public SecuredPeerId? processingEndpoint;
+        public SecuredPeerId processingEndpoint;
 
 
         public static void Encode(Packet packet, BinaryWriter writer, SecuredPeerId toEndpoint)

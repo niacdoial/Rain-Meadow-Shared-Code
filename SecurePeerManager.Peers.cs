@@ -35,9 +35,11 @@ namespace RainMeadow.Shared
                 throw new Exception("malformed pubkey: wrong size");
         }
 
+        public override bool Equals(object obj) => obj is SecuredPeerId id? Equals(id) : false;
         public bool Equals(SecuredPeerId? id) => id == null? false : SharedPlatform.CompareIPEndpoints(this.endPoint, id.endPoint);
         public static bool operator ==(SecuredPeerId? a,SecuredPeerId? b) => a is null? b is null : a.Equals(b);
         public static bool operator !=(SecuredPeerId? a,SecuredPeerId? b) => !(a == b);
+        public override int GetHashCode() => endPoint.GetHashCode();
 
 
         public bool CompareAndUpdate(SecuredPeerId? other) {
