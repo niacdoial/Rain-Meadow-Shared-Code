@@ -36,7 +36,9 @@ namespace RainMeadow.Shared
             RouterCustomPacket,
 
             // placeholder Router stuff
+            [Obsolete]
             PublishRouterLobby,
+            [Obsolete]
             LobbyIsEmpty,
         }
 
@@ -120,8 +122,8 @@ namespace RainMeadow.Shared
                     Type.RouterModifyPlayerList => new RouterModifyPlayerListPacket(),
                     Type.JoinRouterLobby => new JoinRouterLobby(),
                     Type.RouteSessionData => new RouteSessionData(),
-                    Type.LobbyIsEmpty => new LobbyIsEmpty(),
-                    Type.PublishRouterLobby => new PublishRouterLobby(),
+                    // Type.LobbyIsEmpty => new LobbyIsEmpty(),
+                    // Type.PublishRouterLobby => new PublishRouterLobby(),
                     Type.RouterChatMessage => new RouterChatMessage(),
                     Type.RouterCustomPacket => new RouterCustomPacket(),
                     Type.PlayerJoiningDecision => new PlayerJoiningDecision(),
