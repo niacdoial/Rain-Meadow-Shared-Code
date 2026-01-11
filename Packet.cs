@@ -45,6 +45,7 @@ namespace RainMeadow.Shared
 
         public abstract Type type { get; }
         public ushort size = 0;
+        public bool boxed = false;
 
         public virtual void Serialize(BinaryWriter writer) { } // Write into bytes
         public virtual void Deserialize(BinaryReader reader) { } // Read from bytes
@@ -69,7 +70,7 @@ namespace RainMeadow.Shared
             writer.Seek(packet.size, SeekOrigin.Current);
         }
 
-        public static void Decode(BinaryReader reader, SecuredPeerId fromEndpoint)
+        public static void Decode(BinaryReader reader, SecuredPeerId fromEndpoint, bool wasBoxed)
         {
             Type type = (Type)reader.ReadByte();
             // RainMeadow.Debug($"Recieved {type}");
@@ -87,6 +88,7 @@ namespace RainMeadow.Shared
                 return;
             }
 
+            packet.boxed = wasBoxed;
             packet.processingEndpoint = fromEndpoint;
             packet.size = reader.ReadUInt16();
             var startingPos = reader.BaseStream.Position;
