@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text;
 using Sodium;
 
 namespace RainMeadow.Shared
@@ -87,17 +88,20 @@ namespace RainMeadow.Shared
             }
         }
 
-        public override string ToString()
+        public override string ToString() => ToString(true);
+        public string ToString(bool debug)
         {
-            var pubkeyString = "";
+            StringBuilder builder = new StringBuilder();
             if (publicKey != null) 
             {
-                pubkeyString = LibSodium.BinToHex(publicKey);
+                builder.Append(LibSodium.BinToHex(publicKey));
             }
-            
-            return (string.IsNullOrWhiteSpace(pubkeyString)? endPoint.ToString() : $"{pubkeyString}@{endPoint}") + 
-                $"[is machine local: {IsLoopback()}, is network local: {IsNetworkLocal()}]";
+
+            builder.Append(endPoint);
+            builder.Append($" [is machine local: {IsLoopback()}, is network local: {IsNetworkLocal()}]");
+            return builder.ToString();
         }
+
 
 
         public static SecuredPeerId Deserialize(BinaryReader reader, SecuredPeerId from)
