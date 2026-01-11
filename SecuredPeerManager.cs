@@ -252,8 +252,9 @@ namespace RainMeadow.Shared
             }
         }
 
-        public byte[]? Receive(out SecuredPeerId? sender, bool blocking = false) {
+        public byte[]? Receive(out SecuredPeerId? sender, out bool boxed, bool blocking = false) {
             sender = null;
+            boxed = false;
 
             
             if ((!blocking) && socket.Available == 0) return null;
@@ -318,6 +319,7 @@ namespace RainMeadow.Shared
                             stream.Read(clearText, 0, clearText.Length);
                             if (security.HasFlag(SecurityFlags.Boxed))
                             {
+                                boxed = true;
                                 byte[] nonce;
                                 if (flags.HasFlag(PacketFlags.Reliable))
                                 {
