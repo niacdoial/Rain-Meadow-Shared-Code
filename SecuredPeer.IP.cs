@@ -6,66 +6,11 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-//using System.Security.Cryptography;
-
-/// //////////////////////////////////////////
-/// This file describes the common interface for the lowest part of the network stack (for non-steam networking): Peer management
-///
-/// This layer is only responsible for properly keeping track of raw connections to other machines (players or lobby server),
-/// though this connection is also responsible for its own encryption.
-///
-/// The main concepts are:
-/// - the PeerId object, each instance of which uniquely identifies another machine on the network, and (if transmitted over the network) allows to create a connection to said machine.
-///   The PeerManager class is also responsible for serialising/deserialising one or many PeerIds at once.
-/// - Sending/Receiving packets: this sends/returns the byte sequences used by the higher layers of the network stack, and uses a PeerId object to choose/tell which other machine is involved.
-///   packets (visible outside of that layer) come in three flavours:
-///   - Reliable (ordered, reliable packets to/from a single machine),
-///   - Unreliable (unordered, unreliable packets to/from a single machine),
-///   - Broadcast (unordered, unreliable packets to many machines, but from a single one), only used in LAN contexts to advertise one's presence
-/// - though, internally other packet types exist, to make the peer management system itself work
-/// - IP tools: a lot of utility functions to deal with IP EndPoints are present in this base class.
-
+using Sodium;
 
 namespace RainMeadow.Shared
 {
-    public abstract class PeerId {
-        public abstract bool Equals(PeerId other);
-        public override bool Equals(object obj)
-        {
-            return Equals(obj as PeerId);
-        }
-        /// like Equals, but assumes "other" *might* be an updated version of this, and if it is, update this to match
-        public virtual bool CompareAndUpdate(PeerId other) {
-            // though be default there is nothing to update
-            return Equals(other);
-        }
-
-        public static bool operator ==(PeerId lhs, PeerId rhs)
-        {
-            return lhs is null ? rhs is null : lhs.Equals(rhs);
-        }
-        public static bool operator !=(PeerId lhs, PeerId rhs) => !(lhs == rhs);
-        public abstract bool isLoopback();
-        public abstract bool isNetworkLocal();
-        public abstract bool isBlackHole();
-    }
-    public abstract class BasePeerManager : IDisposable
-    {
-        public enum PacketType : byte
-        {
-            Unreliable = 0,
-            UnreliableBroadcast,
-            Reliable, // and ordered!
-        }
-
-        public Socket socket;
-        public int port;
-
-        public const int MTU = 1500;  // 1500 is the MTU for general internet communications
-        public const int DEFAULT_PORT = 8720;
-        public const int FIND_PORT_ATTEMPTS = 8; // 8 players somehow hosting from the same machine is ridiculous.
-        public byte[] reusableRecvBuffer = new byte[MTU];
-
+    public partial class PeerManager {
         public void InitSocket(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             try {
                 this.socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -232,47 +177,6 @@ namespace RainMeadow.Shared
             int port = reader.ReadUInt16();
             byte[] endpointbytes = reader.ReadBytes(length);
             return new IPEndPoint(new IPAddress(endpointbytes), port);
-        }
-
-
-        public /*static readonly*/ PeerId BlackHole;
-        public abstract PeerId GetSelf();
-        public /*static*/ abstract PeerId[] GetBroadcastPeerIDs();
-        public /*static*/ abstract PeerId? GetPeerIdByName(string name);
-        public /*static*/ abstract string describePeerId(PeerId endPoint, PeerId? serverEndPoint=null);
-
-        public delegate void OnPeerForgotten_t(PeerId peerId);
-        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
-        public void Run_OnPeerForgotten(PeerId peerId) {
-            OnPeerForgotten.Invoke(peerId);
-        }
-
-        public delegate void ConfirmCallback_t(string template, string data, ref bool canProceed);
-        public event ConfirmCallback_t ConfirmCallback = delegate { };
-        public bool Run_ConfirmCallback(string template, string data) {
-            bool canProceed = true;
-            ConfirmCallback.Invoke(template, data, ref canProceed);
-            return canProceed;
-        }
-
-        public /*static*/ abstract void SerializePeerIDs(BinaryWriter writer, PeerId[] endPoints, PeerId addressedto, bool includeme = true);
-        public /*static*/ abstract PeerId[] DeserializePeerIDs(BinaryReader reader, PeerId fromWho);
-        public /*static*/ abstract void SerializePeerId(BinaryWriter writer, PeerId peerId);
-        public /*static*/ abstract PeerId DeserializePeerId(BinaryReader reader);
-
-        public abstract void EnsureRemotePeerCreated(PeerId peerId);
-        public abstract void ForgetPeer(PeerId peerId);
-        public abstract void ForgetAllPeers();
-        public abstract void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false);
-        public abstract byte[]? Receive(out PeerId? sender, bool blocking=false);
-        public abstract void Update();
-
-        public bool IsDisposed { get => _isDisposed; }
-        public bool _isDisposed = false;
-        void IDisposable.Dispose() {
-            socket.Dispose();
-            _isDisposed = true;
-            GC.SuppressFinalize(this);
         }
     }
 }

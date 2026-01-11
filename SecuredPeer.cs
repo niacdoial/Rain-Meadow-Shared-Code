@@ -8,8 +8,27 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Sodium;
 
+
 /// //////////////////////////////////////////
-/// BasePeer describes the common interface for the lowest part of the network stack (for non-steam networking): Peer management
+/// This file describes the lowest part of the network stack (for non-steam networking): Peer management
+///
+/// This layer is only responsible for properly keeping track of raw connections to other machines (players or lobby server),
+/// though this connection is also responsible for its own encryption.
+///
+/// The main concepts are:
+/// - the PeerId object, each instance of which uniquely identifies another machine on the network, and (if transmitted over the network) allows to create a connection to said machine.
+///   The PeerManager class is also responsible for serialising/deserialising one or many PeerIds at once.
+/// - Sending/Receiving packets: this sends/returns the byte sequences used by the higher layers of the network stack, and uses a PeerId object to choose/tell which other machine is involved.
+///   packets (visible outside of that layer) come in three flavours:
+///   - Reliable (ordered, reliable packets to/from a single machine),
+///   - Unreliable (unordered, unreliable packets to/from a single machine),
+///   - Broadcast (unordered, unreliable packets to many machines, but from a single one), only used in LAN contexts to advertise one's presence
+/// - though, internally other packet types exist, to make the peer management system itself work
+/// - IP tools: a lot of utility functions to deal with IP EndPoints are present in this base class.
+///
+///
+///
+/// Here is how this works in more detail
 /// This file describes a variant of that that includes encryption
 ///
 /// Internally, the packets have two types:
@@ -73,10 +92,26 @@ using Sodium;
 namespace RainMeadow.Shared
 {
 
-    public partial class SecuredPeerManager : BasePeerManager, IDisposable
+    public partial class PeerManager: IDisposable
     {
+        public Socket socket;
+        public int port;
+
+        public const int MTU = 1500;  // 1500 is the MTU for general internet communications
+        public const int DEFAULT_PORT = 8720;
+        public const int FIND_PORT_ATTEMPTS = 8; // 8 players somehow hosting from the same machine is ridiculous.
+        public byte[] reusableRecvBuffer = new byte[MTU];
+
         byte[] connection_sk;
         byte[] connection_pk;
+
+        /// The PacketType enum to be used by what calls the PeerManager's functions
+        public enum PacketType : byte
+        {
+            Unreliable = 0,
+            UnreliableBroadcast,
+            Reliable, // and ordered!
+        }
 
         public enum PacketSecurity: byte {
             CleartextBroadcast_v1 = 0,
@@ -92,9 +127,8 @@ namespace RainMeadow.Shared
             VersionError = 255,
         }
 
-
-        public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
-            BlackHole = SecuredPeerId.MakeClearText(SecuredPeerId.BlackHoleEndPoint);
+        public PeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
+            BlackHole = PeerId.MakeClearText(PeerId.BlackHoleEndPoint);
 
             InitSocket(default_port, port_attempts);
             // this.identity_pk = new byte[LibSodium.SIGN_PK_SIZE];
@@ -104,19 +138,18 @@ namespace RainMeadow.Shared
             this.ResetKeys();
         }
 
-        public override void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false) {
-            var secPeerId = peerId as SecuredPeerId;
-            if (secPeerId == null) {
+        public void Send(byte[] packet, PeerId peerId, PacketType packet_type = PacketType.Reliable, bool begin_conversation = false) {
+            if (peerId == null) {
                 throw new Exception("cannot send packet to wrong kind of PeerId");
             }
-            if (GetRemotePeer(secPeerId, true) is RemotePeer peer) {
+            if (GetRemotePeer(peerId, true) is RemotePeer peer) {
                 switch (packet_type) {
                     case PacketType.UnreliableBroadcast:
-                        secPeerId.ValidateCryptStatus(false, true);
+                        peerId.ValidateCryptStatus(false, true);
                         SendRaw(packet, peer, RawPacketType.Unreliable_v1, PacketSecurity.CleartextBroadcast_v1);
                         break;
                     case PacketType.Unreliable:
-                        secPeerId.ValidateCryptStatus(false, false);
+                        peerId.ValidateCryptStatus(false, false);
                         if (begin_conversation) {
                             SendRaw(packet, peer, RawPacketType.Unreliable_v1, PacketSecurity.BoxedWithPubKey_v1);
                         } else {
@@ -124,7 +157,7 @@ namespace RainMeadow.Shared
                         }
                         break;
                     case PacketType.Reliable:
-                        secPeerId.ValidateCryptStatus(false, false);
+                        peerId.ValidateCryptStatus(false, false);
 
                         if (begin_conversation && !peer.need_begin_conversation_ack) {
                             SharedCodeLogger.Debug("redundant begin_conversation flag? adding this flag to the next Reliable packet sent, which might not be the one currently queued.");
@@ -146,7 +179,7 @@ namespace RainMeadow.Shared
 
         void SendRaw(byte[] packet, RemotePeer peer, RawPacketType innerType, PacketSecurity outerType) {
             // if the peer is not yet ready for encrypted communications, make sure not to do anything until that part is set up
-            if (peer.id.status == SecuredPeerId.PeerStatus.Unknown) {
+            if (peer.id.status == PeerId.PeerStatus.Unknown) {
                 if (!allowPeerCreationWithoutKey) {
                     throw new Exception("Asking a peer for their pubkey is insecure and not allowed in the current context");
                 }
@@ -222,6 +255,16 @@ namespace RainMeadow.Shared
                 throw new Exception("unknown outer Packet type... bad code update?");
             };
 
+            // if (clearLength > MTU) {
+            //     SharedCodeLogger.Error(
+            //         "Too long: "+packet.Length.ToString()
+            //         +" + " +(clearLength - packet.Length).ToString()
+            //         +" + " +extraLength.ToString()
+            //         +" = "+(extraLength+clearLength).ToString()
+            //         + " > "+MTU.ToString()
+            //     );
+            //     throw new Exception("packet too long for the internet to accept!");
+            // }
             using (MemoryStream stream = new(extraLength + clearLength))
             using (BinaryWriter writer = new(stream))
             {
@@ -248,7 +291,7 @@ namespace RainMeadow.Shared
 
 
         long? lastTime = null!;
-        public override void Update()
+        public void Update()
         {
             long time = (long)SharedPlatform.TimeMS;
             long elapsedTime;
@@ -306,7 +349,7 @@ namespace RainMeadow.Shared
             foreach (var peer in peersToRemove) ForgetPeer(peer);
         }
 
-        public override byte[]? Receive(out PeerId? sender, bool blocking=false) {
+        public byte[]? Receive(out PeerId? sender, bool blocking=false) {
             sender = null;
 
             if ((!blocking) && socket.Available == 0) {
@@ -348,7 +391,7 @@ namespace RainMeadow.Shared
 
             IPEndPoint? ipsender = senderEndPoint as IPEndPoint;
             if (ipsender == null) return null;
-            SecuredPeerId remoteId = GetIdFromEndpoint(ipsender);
+            PeerId remoteId = GetIdFromEndpoint(ipsender);
             RemotePeer peer = null;
 
             try {
@@ -502,22 +545,22 @@ namespace RainMeadow.Shared
         }
 
 
-        RemotePeer OnReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey) {
+        RemotePeer OnReceivePubkey(ref PeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey) {
             if (currentPeerId == null) {
                 // TODO restrict this codepath
-                var newId = new SecuredPeerId(ipsender, pubKey);
+                var newId = new PeerId(ipsender, pubKey);
                 newId.ValidateCryptStatus(true, false);
                 currentPeerId = newId;
                 SharedCodeLogger.Debug("created new pair from self-introduction");
                 return GetRemotePeer(newId, true);
             } else {
-                if (currentPeerId.status == SecuredPeerId.PeerStatus.Unknown) {
+                if (currentPeerId.status == PeerId.PeerStatus.Unknown) {
                     if (!allowPeerCreationWithoutKey) {
                         throw new Exception("unknown-status peer are not to be used in this context, nor upgraded into connected-status");
                     }
                     // if we connected to a peer without knowing its pubkey, we need to ask the user if the key's correct
                     if (Run_ConfirmCallback("Is the following public key the one you expect for this lobby?", LibSodium.BoxPubKeyToHex(pubKey))) {
-                        currentPeerId.status = SecuredPeerId.PeerStatus.Connected;
+                        currentPeerId.status = PeerId.PeerStatus.Connected;
                         currentPeerId.boxPubkey = pubKey;
                         currentPeerId.ValidateCryptStatus(true, false);
                         SharedCodeLogger.Debug("created new pair from confirmation");
@@ -526,7 +569,7 @@ namespace RainMeadow.Shared
                         SharedCodeLogger.Error("Player rejected this peer's pubkey");
                         return null;
                     }
-                } else if (currentPeerId.status == SecuredPeerId.PeerStatus.Connected && SecuredPeerId.ComparePubKeys(currentPeerId.boxPubkey, pubKey)) {
+                } else if (currentPeerId.status == PeerId.PeerStatus.Connected && PeerId.ComparePubKeys(currentPeerId.boxPubkey, pubKey)) {
                     SharedCodeLogger.Debug("introducing peer already registereds");
                     currentPeerId.ValidateCryptStatus(true, false);
                     return GetRemotePeer(currentPeerId);
@@ -543,6 +586,7 @@ namespace RainMeadow.Shared
         }
 
 
+        bool _isDisposed = false;
         void IDisposable.Dispose() {
             unsafe{
                 fixed(byte* p_bpk = this.connection_pk, p_bsk = this.connection_sk) {

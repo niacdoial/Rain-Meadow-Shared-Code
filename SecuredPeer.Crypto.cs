@@ -81,7 +81,7 @@ namespace RainMeadow.Shared
     //     - another idea: generate a "proxying key"
 
 
-    public partial class SecuredPeerManager : BasePeerManager
+    public partial class PeerManager
     {
         void ResetKeys() {
             unsafe

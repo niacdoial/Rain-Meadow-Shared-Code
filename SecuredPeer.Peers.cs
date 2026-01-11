@@ -11,7 +11,7 @@ using Sodium;
 namespace RainMeadow.Shared
 {
 
-    public class SecuredPeerId : PeerId {
+    public class PeerId {
 
         // TODO: ClearTextOnly reception is jank: lobby enumeration needs to feed the pubkeys
         public enum PeerStatus: byte {
@@ -24,7 +24,7 @@ namespace RainMeadow.Shared
         public IPEndPoint endPoint;
         public byte[] boxPubkey;
 
-        public SecuredPeerId(IPEndPoint endPoint, byte[] boxPubkey) {
+        public PeerId(IPEndPoint endPoint, byte[] boxPubkey) {
             this.status = PeerStatus.Connected;
             this.endPoint = endPoint;
             this.boxPubkey = boxPubkey;
@@ -32,32 +32,42 @@ namespace RainMeadow.Shared
                 throw new Exception("malformed pubkey: wrong size");
             }
         }
-        public static SecuredPeerId MakeClearText(IPEndPoint endPoint) {
-            SecuredPeerId newSelf = new SecuredPeerId(endPoint, null);
+        public static PeerId MakeClearText(IPEndPoint endPoint) {
+            PeerId newSelf = new PeerId(endPoint, null);
             newSelf.status = PeerStatus.ClearTextOnly;
             return newSelf;
         }
-        public static SecuredPeerId MakeUnknown(IPEndPoint endPoint) {
+        public static PeerId MakeUnknown(IPEndPoint endPoint) {
             if (!SharedPlatform.PlatformPeerManager.allowPeerCreationWithoutKey) {
                 throw new Exception("Cannot create unknown-status PeerIDs currently");
             }
-            SecuredPeerId newSelf = new SecuredPeerId(endPoint, null);
+            PeerId newSelf = new PeerId(endPoint, null);
             newSelf.status = PeerStatus.Unknown;
             return newSelf;
         }
 
-        public bool Equals(SecuredPeerId id)
+        public bool Equals(object obj)
+        {
+            return Equals(obj as PeerId);
+        }
+        public bool Equals(PeerId id)
         {
             if (this.status == PeerStatus.Connected && id.status == PeerStatus.Connected) {
                 return ComparePubKeys(this.boxPubkey, id.boxPubkey);
             } else if (this.status == PeerStatus.Unknown && id.status == PeerStatus.Unknown) {
-                return  BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
+                return  PeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
             } else if (this.status == PeerStatus.ClearTextOnly && id.status == PeerStatus.ClearTextOnly) {
-                return  BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
+                return  PeerManager.CompareIPEndpoints(this.endPoint, id.endPoint);
             } else {
                 return false;
             }
         }
+
+        public static bool operator ==(PeerId lhs, PeerId rhs)
+        {
+            return lhs is null ? rhs is null : lhs.Equals(rhs);
+        }
+        public static bool operator !=(PeerId lhs, PeerId rhs) => !(lhs == rhs);
 
         public static bool ComparePubKeys(byte[] first, byte[] second) {
             unsafe {
@@ -67,54 +77,42 @@ namespace RainMeadow.Shared
             }
         }
 
-        public override bool Equals(PeerId other)
-        {
+        /// like Equals, but assumes "other" *might* be an updated version of this, and if it is, update this to match
+        public bool CompareAndUpdate(PeerId other) {
             // note that this equality function just means "are we sure this is the same peer?"
-            if (other is SecuredPeerId id)
-            {
-                return Equals(id);
-            }
-            return false;
-        }
-        public override bool CompareAndUpdate(PeerId other) {
-            // note that this equality function just means "are we sure this is the same peer?"
-            if (other is SecuredPeerId id)
-            {
-                if (this.status == PeerStatus.Unknown && id.status == PeerStatus.Connected) {
-                    if (BasePeerManager.CompareIPEndpoints(this.endPoint, id.endPoint)) {
-                        this.boxPubkey = id.boxPubkey;
-                        this.status = PeerStatus.Connected;
-                        return true;
-                    } else {
-                        return false;
-                    }
+            if (this.status == PeerStatus.Unknown && other.status == PeerStatus.Connected) {
+                if (PeerManager.CompareIPEndpoints(this.endPoint, other.endPoint)) {
+                    this.boxPubkey = other.boxPubkey;
+                    this.status = PeerStatus.Connected;
+                    return true;
                 } else {
-                    return Equals(id);
+                    return false;
                 }
+            } else {
+                return Equals(other);
             }
-            return false;
         }
 
-        public override bool isLoopback()
+        public bool isLoopback()
         {
             // TODO: determine how a self PeerId is emitted
             if (endPoint is null) return false;
             if (SharedPlatform.PlatformPeerManager?.port != endPoint.Port) return false;
-            return BasePeerManager.isLoopback(endPoint.Address);
+            return PeerManager.isLoopback(endPoint.Address);
         }
-        public override bool isNetworkLocal()
+        public bool isNetworkLocal()
         {
             if (endPoint is null) return false;
-            return BasePeerManager.isEndpointLocal(endPoint);
+            return PeerManager.isEndpointLocal(endPoint);
         }
 
         // Blackhole Endpoint
         // https://superuser.com/questions/698244/ip-address-that-is-the-equivalent-of-dev-null
         public static IPEndPoint BlackHoleEndPoint = new IPEndPoint(IPAddress.Parse("253.253.253.253"), 999);
-        public override bool isBlackHole()
+        public bool isBlackHole()
         {
             // note that BlackHole PeerIDs are allowed to have pubkeys, because they are a signal that packets to them must be proxied
-            return BasePeerManager.CompareIPEndpoints(endPoint, BlackHoleEndPoint);
+            return PeerManager.CompareIPEndpoints(endPoint, BlackHoleEndPoint);
         }
         public void ValidateCryptStatus(bool peerIsSender = false, bool forClearText = false, bool internalChecksOnly = false) {
             switch (this.status) {
@@ -164,11 +162,11 @@ namespace RainMeadow.Shared
     }
 
 
-    public partial class SecuredPeerManager : BasePeerManager, IDisposable
+    public partial class PeerManager : IDisposable
     {
         class RemotePeer : IDisposable {
             // data for connection itself
-            public SecuredPeerId id;
+            public PeerId id;
             public byte[] connection_computed_k;
 
 
@@ -189,16 +187,31 @@ namespace RainMeadow.Shared
             }
         }
 
+        public PeerId BlackHole = null;
         List<RemotePeer> peers = new();
         public bool allowPeerCreationWithoutKey = false;
 
-        RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool makeOrUpdate = false) {
+        public delegate void OnPeerForgotten_t(PeerId peerId);
+        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
+        public void Run_OnPeerForgotten(PeerId peerId) {
+            OnPeerForgotten.Invoke(peerId);
+        }
+
+        public delegate void ConfirmCallback_t(string template, string data, ref bool canProceed);
+        public event ConfirmCallback_t ConfirmCallback = delegate { };
+        public bool Run_ConfirmCallback(string template, string data) {
+            bool canProceed = true;
+            ConfirmCallback.Invoke(template, data, ref canProceed);
+            return canProceed;
+        }
+
+        RemotePeer? GetRemotePeer(PeerId peerId, bool makeOrUpdate = false) {
             if (makeOrUpdate) {
                 RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
                 if (peer == null) {
                     peerId.ValidateCryptStatus(false, false, true);
                     peer = new RemotePeer() {id = peerId};
-                    if (peerId.status != SecuredPeerId.PeerStatus.ClearTextOnly) {
+                    if (peerId.status != PeerId.PeerStatus.ClearTextOnly) {
                         peers.Add(peer);  // Cleartext (=broadcast) peers are not to be remembered
                     }
                 }
@@ -208,25 +221,22 @@ namespace RainMeadow.Shared
             }
         }
 
-        public override void EnsureRemotePeerCreated(PeerId peerId) {
-            SecuredPeerId? securedPeerId = peerId as SecuredPeerId;
-            if (securedPeerId == null) return;
-            GetRemotePeer(securedPeerId, true);
+        public void EnsureRemotePeerCreated(PeerId peerId) {
+            GetRemotePeer(peerId, true);
         }
 
         void ForgetPeer(RemotePeer peer) {
             peers.Remove(peer);  // remove first, in case this peer's removal callback recurses into here
             Run_OnPeerForgotten(peer.id);
         }
-        public override void ForgetPeer(PeerId peerId) {
-            var secPeerId = peerId as SecuredPeerId;
-            var remove_peers = peers.FindAll(x => secPeerId == x.id);
+        public void ForgetPeer(PeerId peerId) {
+            var remove_peers = peers.FindAll(x => peerId == x.id);
             foreach (RemotePeer peer in remove_peers) {
                 ForgetPeer(peer);
             }
         }
 
-        public override void ForgetAllPeers() {
+        public void ForgetAllPeers() {
             var remove_peers = peers.ToList();
             foreach (RemotePeer peer in remove_peers) {
                 ForgetPeer(peer);
