@@ -98,7 +98,11 @@ namespace RainMeadow.Shared
             }
 
             builder.Append(endPoint);
-            builder.Append($" [is machine local: {IsLoopback()}, is network local: {IsNetworkLocal()}]");
+
+            if (debug)
+            {
+                builder.Append($" [is machine local: {IsLoopback()}, is network local: {IsNetworkLocal()}]");
+            }
             return builder.ToString();
         }
 
@@ -338,7 +342,7 @@ namespace RainMeadow.Shared
             public delegate void OnPeerForgotten_t(RemotePeer peerId);
             public event OnPeerForgotten_t OnPeerForgotten = delegate { };
 
-            void ForgetPeer(RemotePeer peer)
+            public void ForgetPeer(RemotePeer peer)
             {
                 if (peers.Contains(peer))
                 {
