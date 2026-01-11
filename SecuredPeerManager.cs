@@ -252,12 +252,17 @@ namespace RainMeadow.Shared
             }
         }
 
-        public byte[]? Receive(out SecuredPeerId? sender) {
+        public byte[]? Receive(out SecuredPeerId? sender, bool blocking = false) {
             sender = null;
-            socket.Blocking = false;
-            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
+
+            
+            if ((!blocking) && socket.Available == 0) return null;
 
             byte[] rawBuffer = socket.Available > MTU? new byte[socket.Available] : reusableRecvBuffer;
+            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
+
+            socket.Blocking = blocking;
+            socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime;
             int len = socket.ReceiveFrom(rawBuffer, ref senderEndPoint);
 
             if (senderEndPoint is not IPEndPoint ipend) return null;
@@ -328,7 +333,7 @@ namespace RainMeadow.Shared
                                 if (encodedData is null)
                                 {
                                     SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
-                                    peer.acked_pubkey = false;
+                                    peer.id.publicKey = null; // reset public key
                                     return null;
                                 }
                             }
