@@ -52,6 +52,7 @@ namespace RainMeadow.Shared
         }
         public bool Equals(PeerId id)
         {
+            if (id is null) return false;
             if (this.status == PeerStatus.Connected && id.status == PeerStatus.Connected) {
                 return ComparePubKeys(this.boxPubkey, id.boxPubkey);
             } else if (this.status == PeerStatus.Unknown && id.status == PeerStatus.Unknown) {
