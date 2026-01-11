@@ -263,7 +263,7 @@ namespace RainMeadow.Shared
             EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
 
             socket.Blocking = blocking;
-            socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime;
+            socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime / Math.Max(peers.Count, 1);
             int len = socket.ReceiveFrom(rawBuffer, ref senderEndPoint);
 
             if (senderEndPoint is not IPEndPoint ipend) return null;
