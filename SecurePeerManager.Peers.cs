@@ -150,11 +150,18 @@ namespace RainMeadow.Shared
 
         /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
         /// The functions that do not need a separate mechanism to deal with this.
-        public static void SerializeArray(BinaryWriter writer, SecuredPeerId[] peers, SecuredPeerId addressedto) 
+        public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, bool nullable = false) 
         {
             writer.Write((byte)peers.Length);   
-            foreach (SecuredPeerId peer in peers) 
+            foreach (SecuredPeerId? peer in peers) 
             {
+                if (nullable)
+                {
+                    writer.Write(peer is null);
+                    if (peer is null) continue;
+                }
+                else if (peer is null) throw new InvalidProgrammerException("Can't serialize null in non nullable array");
+
                 writer.Write((ushort)peer.endPoint.Port);
                 bool isLoopback = peer.IsLoopback();
                 writer.Write(isLoopback);
@@ -172,11 +179,20 @@ namespace RainMeadow.Shared
             }
         }
 
-        public static SecuredPeerId[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho) 
+        public static SecuredPeerId?[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho, bool nullable = false) 
         {
-            SecuredPeerId[] ret = new SecuredPeerId[reader.ReadByte()];
+            SecuredPeerId?[] ret = new SecuredPeerId[reader.ReadByte()];
             for (int i = 0; i < ret.Length; i++) 
             {
+                if (nullable)
+                {
+                    if (reader.ReadBoolean())
+                    {
+                        ret[i] = null;
+                        continue;
+                    }
+                }
+
                 ushort port = reader.ReadUInt16();
                 if (reader.ReadBoolean()) // isMe
                 {

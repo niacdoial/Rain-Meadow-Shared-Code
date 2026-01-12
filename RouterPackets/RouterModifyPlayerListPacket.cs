@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
 
@@ -19,11 +20,11 @@ namespace RainMeadow.Shared
 
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
-        public List<SecuredPeerId> endPoints { get; private set; }
+        public List<SecuredPeerId?> endPoints { get; private set; }
         public List<string> userNames { get; private set; }
 
         public RouterModifyPlayerListPacket ( ) { }
-        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId> endPoints, List<string> userNames)
+        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId?> endPoints, List<string> userNames)
         {
             if (routerIds.Count == endPoints.Count && routerIds.Count == userNames.Count) {
             } else {
@@ -40,7 +41,7 @@ namespace RainMeadow.Shared
         {
             this.operation = operation;
             this.routerIds = routerIds;
-            this.endPoints = new List<SecuredPeerId> {};
+            this.endPoints = new List<SecuredPeerId?>{};
             this.userNames = new List<string> {};
         }
 
@@ -52,7 +53,7 @@ namespace RainMeadow.Shared
             foreach (ushort id in routerIds) writer.Write(id);
             if (operation != Operation.Remove) 
             {
-                SecuredPeerId.SerializeArray(writer, endPoints.ToArray(), processingEndpoint!);
+                SecuredPeerId.SerializeArray(writer, endPoints.ToArray(), processingEndpoint!, true);
                 foreach (string name in userNames) writer.Write(name);
             }
         }
@@ -71,7 +72,7 @@ namespace RainMeadow.Shared
 
             if (operation != Operation.Remove) 
             {
-                endPoints = new List<SecuredPeerId>(SecuredPeerId.DeserializeArray(reader, processingEndpoint!));
+                endPoints = SecuredPeerId.DeserializeArray(reader, processingEndpoint!, true).ToList();
                 userNames = new(count);
                 for (ushort i=0; i<count ; i++) {
                     userNames.Add(reader.ReadString());
