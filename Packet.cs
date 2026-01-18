@@ -53,13 +53,17 @@ namespace RainMeadow.Shared
         public virtual void Deserialize(BinaryReader reader) { } // Read from bytes
         public virtual void Process() { } // Do the payload
 
-        public SecuredPeerId processingEndpoint;
+
+        #pragma warning disable CS8618
+        public SecuredPeerId processingPeer;
+        public SecuredPeerId mePeer;
+        #pragma warning restore CS8618
 
 
-        public static void Encode(Packet packet, BinaryWriter writer, SecuredPeerId toEndpoint)
+        public static void Encode(Packet packet, BinaryWriter writer, SecuredPeerId toPeer, SecuredPeerId mePeer)
         {
-            packet.processingEndpoint = toEndpoint;
-
+            packet.processingPeer = toPeer;
+            packet.mePeer = mePeer;
             writer.Write((byte)packet.type);
             long payloadPos = writer.Seek(2, SeekOrigin.Current);
 
@@ -72,7 +76,7 @@ namespace RainMeadow.Shared
             writer.Seek(packet.size, SeekOrigin.Current);
         }
 
-        public static void Decode(BinaryReader reader, SecuredPeerId fromEndpoint, bool wasBoxed)
+        public static void Decode(BinaryReader reader, SecuredPeerId fromPeer, SecuredPeerId mePeer, bool wasBoxed)
         {
             Type type = (Type)reader.ReadByte();
             // RainMeadow.Debug($"Recieved {type}");
@@ -91,7 +95,8 @@ namespace RainMeadow.Shared
             }
 
             packet.boxed = wasBoxed;
-            packet.processingEndpoint = fromEndpoint;
+            packet.processingPeer = fromPeer;
+            packet.mePeer = mePeer;
             packet.size = reader.ReadUInt16();
             var startingPos = reader.BaseStream.Position;
 

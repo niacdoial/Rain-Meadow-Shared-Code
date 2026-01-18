@@ -130,34 +130,24 @@ namespace RainMeadow.Shared
 
         public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true) 
         {
-            RemotePeer peer = GetRemotePeer(peerId, !packet_flags.HasFlag(PacketFlags.Broadcast)) ?? new RemotePeer(this, peerId);
-            if (peer is not null) 
+            // Create a temporary peer for remote packets. Otherwise don't bother.
+            RemotePeer? peer = GetRemotePeer(peerId, !packet_flags.HasFlag(PacketFlags.Broadcast));
+            if (peer is null) peer = new RemotePeer(this, peerId); 
+            if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
-                switch (packet_flags & PacketFlags.Reliable) 
-                {
-                    case PacketFlags.Unreliable:
-                        boxed = false;
-                        
-                        SecurityFlags security_flags = SecurityFlags.ClearText;
-                        if (!packet_flags.HasFlag(PacketFlags.Broadcast))
-                        {
-                            if (packet_flags == PacketFlags.Unreliable || packet_flags == PacketFlags.Reliable)
-                            {
-                                if (boxed) security_flags = security_flags | SecurityFlags.Boxed;
-                                if (!peer.acked_pubkey) security_flags = security_flags | SecurityFlags.SendPubKey;
-                            }
-                        }
+                peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
+                if (peer.outgoingPackets.Any()) return;
+            }
 
-                        SendRaw(packet, peer, packet_flags, security_flags);
-                        break;
 
-                    case PacketFlags.Reliable:
-                        peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
-                        if (!peer.outgoingPackets.Any()) goto case PacketFlags.Unreliable;                        
-                        break;
-                }
-            } 
-            else throw new InvalidProgrammerException("Couldn't make remote peer");
+            SecurityFlags security_flags = SecurityFlags.ClearText;
+            if (!packet_flags.HasFlag(PacketFlags.Broadcast) && packet_flags != PacketFlags.Acknoledgement)
+            {
+                if (boxed) security_flags = security_flags | SecurityFlags.Boxed;
+                if (!peer.acked_pubkey) security_flags = security_flags | SecurityFlags.SendPubKey;
+            }
+
+            SendRaw(packet, peer, packet_flags, security_flags);
         }
 
         void SendRaw(byte[] packet, RemotePeer peer, PacketFlags flags, SecurityFlags security) {
@@ -175,15 +165,8 @@ namespace RainMeadow.Shared
             int boilerplateLen = 1;
             if (flags == PacketFlags.Acknoledgement || flags.HasFlag(PacketFlags.Reliable)) boilerplateLen += sizeof(ulong);
             // then compute the "added bits" added before the cyphertext (extraLength includes the fact that cyphertext is longer than cleartext)
-            if (security.HasFlag(SecurityFlags.SendPubKey))
-            {
-                boilerplateLen += LibSodium.BOX_PK_SIZE;
-            }
-
-            if (security.HasFlag(SecurityFlags.Boxed))
-            {
-                boilerplateLen += LibSodium.BOX_NONCE_SIZE;
-            }
+            if (security.HasFlag(SecurityFlags.SendPubKey)) boilerplateLen += LibSodium.BOX_PK_SIZE;
+            if (security.HasFlag(SecurityFlags.Boxed) && flags.HasFlag(PacketFlags.Reliable)) boilerplateLen += LibSodium.BOX_NONCE_SIZE;
 
             using (MemoryStream stream = new(boilerplateLen + packet.Length))
             using (BinaryWriter writer = new(stream))
@@ -206,14 +189,14 @@ namespace RainMeadow.Shared
                 if (ack.HasValue) writer.Write(ack.Value);
 
                 // write data boxed / cleartext
-                if (packet.Length > 0)
+                if (packet.Length > 0 && flags != PacketFlags.Acknoledgement)
                 {
                     if (security.HasFlag(SecurityFlags.Boxed))
                     {
                         byte[] nonce;
                         if (ack.HasValue)
                         {
-                            nonce = MakeReliableNonce(ack.Value);
+                            nonce = MakeReliableNonce(ack.Value, public_key);
                         }
                         else
                         {
@@ -260,7 +243,7 @@ namespace RainMeadow.Shared
             if ((!blocking) && socket.Available == 0) return null;
 
             byte[] rawBuffer = socket.Available > MTU? new byte[socket.Available] : reusableRecvBuffer;
-            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, 8720);
+            EndPoint? senderEndPoint = null;
 
             socket.Blocking = blocking;
             socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime / Math.Max(peers.Count, 1);
@@ -319,11 +302,24 @@ namespace RainMeadow.Shared
                             stream.Read(clearText, 0, clearText.Length);
                             if (security.HasFlag(SecurityFlags.Boxed))
                             {
+
+                                if (peer is null) 
+                                {
+                                    SharedCodeLogger.Error($"Boxed packet from unknown sender: {sender}");
+                                    return null;
+                                }
+
+                                if (sender.publicKey is null) 
+                                {
+                                    SharedCodeLogger.Error($"Boxed packet from sender with unknown public key: {sender}");
+                                    return null;
+                                }
+
                                 boxed = true;
                                 byte[] nonce;
                                 if (flags.HasFlag(PacketFlags.Reliable))
                                 {
-                                    nonce = MakeReliableNonce(ack);
+                                    nonce = MakeReliableNonce(ack, sender.publicKey);
                                 }
                                 else
                                 {
@@ -335,7 +331,6 @@ namespace RainMeadow.Shared
                                 if (encodedData is null)
                                 {
                                     SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
-                                    peer.id.publicKey = null; // reset public key
                                     return null;
                                 }
                             }

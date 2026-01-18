@@ -25,7 +25,7 @@ namespace RainMeadow.Shared
             }
         }
 
-        public IPEndPoint endPoint;
+        public readonly IPEndPoint endPoint;
         public byte[]? publicKey;
         public SecuredPeerId(IPEndPoint endPoint, byte[]? boxPubkey) 
         {
@@ -110,76 +110,70 @@ namespace RainMeadow.Shared
 
 
 
-        public static SecuredPeerId Deserialize(BinaryReader reader, SecuredPeerId from)
+        public static SecuredPeerId Deserialize(BinaryReader reader, SecuredPeerId from, SecuredPeerId me)
         {
+            byte[]? public_key = null;
+            if (reader.ReadBoolean()) public_key = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
+            
+            byte flags = reader.ReadByte();
+            reader.ReadByte();
+
             ushort port = reader.ReadUInt16();
-            if (reader.ReadBoolean()) // isMe
+            if ((flags & 0b01) == 0b01) // It's them
             {
-                return new SecuredPeerId(new IPEndPoint(IPAddress.Loopback, port), null);
+                return new SecuredPeerId(from.endPoint, public_key);
             }
-            else if (reader.ReadBoolean()) // isThem
+            else if ((flags & 0b10) == 0b10) // It's me
             {
-                return new SecuredPeerId(new IPEndPoint(from.endPoint.Address, port), null);
+                return new SecuredPeerId(me.endPoint, public_key);
             }
             else
             {
                 IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte()));
-                return new SecuredPeerId(new IPEndPoint(address, port), null);
+                return new SecuredPeerId(new IPEndPoint(address, port), public_key);
             }
         }
 
-        public void Serialize(BinaryWriter writer, SecuredPeerId to) 
+        public void Serialize(BinaryWriter writer, SecuredPeerId to, SecuredPeerId me) 
         {
-            // writer.Write(publicKey != null);
-            // if (publicKey != null) writer.Write(publicKey);
-            writer.Write((ushort)endPoint.Port);
-            bool isLoopback = IsLoopback();
-            writer.Write(isLoopback);
-            if (!isLoopback)
-            {
-                bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
-                writer.Write(isThem);
+            writer.Write(publicKey != null);
+            if (publicKey != null) writer.Write(publicKey);
+            
+            bool isLoopback = SharedPlatform.CompareIPEndpoints(to.endPoint, me.endPoint);
+            bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
 
-                if (!isThem)
-                {
-                    writer.Write((byte)endPoint.Address.GetAddressBytes().Length);
-                    writer.Write(endPoint.Address.GetAddressBytes());
-                }
+            byte flags = 0;
+            if (isLoopback) flags |= 0b01;
+            if (isThem) flags |= 0b10;
+            writer.Write(flags);
+
+
+            if (!isThem && !isLoopback)
+            {
+                writer.Write(endPoint.Port);
+                writer.Write(endPoint.Address.MapToIPv4().GetAddressBytes());
             }
         }
 
         /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
         /// The functions that do not need a separate mechanism to deal with this.
-        public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, bool nullable = false) 
+        public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, SecuredPeerId me, bool nullable = false) 
         {
             writer.Write((byte)peers.Length);   
             foreach (SecuredPeerId? peer in peers) 
             {
+                
                 if (nullable)
                 {
                     writer.Write(peer is null);
                     if (peer is null) continue;
                 }
                 else if (peer is null) throw new InvalidProgrammerException("Can't serialize null in non nullable array");
-
-                writer.Write((ushort)peer.endPoint.Port);
-                bool isLoopback = peer.IsLoopback();
-                writer.Write(isLoopback);
-                if (!isLoopback)
-                {
-                    bool isThem = SharedPlatform.CompareIPEndpoints(addressedto.endPoint, peer.endPoint);
-                    writer.Write(isThem);
-
-                    if (!isThem)
-                    {
-                        writer.Write((byte)peer.endPoint.Address.GetAddressBytes().Length);
-                        writer.Write(peer.endPoint.Address.GetAddressBytes());
-                    }
-                }
+                peer.Serialize(writer, addressedto, me);
             }
         }
 
-        public static SecuredPeerId?[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho, bool nullable = false) 
+        public static SecuredPeerId?[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho, SecuredPeerId me, bool nullable = false) 
         {
             SecuredPeerId?[] ret = new SecuredPeerId[reader.ReadByte()];
             for (int i = 0; i < ret.Length; i++) 
@@ -193,20 +187,7 @@ namespace RainMeadow.Shared
                     }
                 }
 
-                ushort port = reader.ReadUInt16();
-                if (reader.ReadBoolean()) // isMe
-                {
-                    ret[i] = new SecuredPeerId(new IPEndPoint(IPAddress.Loopback, port), null);
-                }
-                else if (reader.ReadBoolean()) // isThem
-                {
-                    ret[i] = new SecuredPeerId(new IPEndPoint(fromWho.endPoint.Address, port), null);
-                }
-                else
-                {
-                    IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte()));
-                    ret[i] = new SecuredPeerId(new IPEndPoint(address, port), null);
-                }
+                ret[i] = SecuredPeerId.Deserialize(reader, fromWho, me);
             }
 
             return ret;
@@ -300,6 +281,7 @@ namespace RainMeadow.Shared
                             {
 
                                 // we failed to send it. 
+                                SharedCodeLogger.Error($"Failed to send packet with ack {wanted_acknowledgement}");
                                 wanted_acknowledgement++;
                                 outgoingPackets.Dequeue();
                             }
@@ -321,7 +303,7 @@ namespace RainMeadow.Shared
                 }
             }            
 
-            bool disposed;
+            public bool Disposed { get; private set; }
             public byte[]? shared_key;
             public void Dispose() {
                 if (shared_key is not null)
@@ -334,7 +316,7 @@ namespace RainMeadow.Shared
                     }
                 }
 
-                disposed = false;
+                Disposed = true;
             }  
 
             ~RemotePeer()

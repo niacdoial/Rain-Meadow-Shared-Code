@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 //using UnityEngine;
 using Sodium;
@@ -159,7 +160,8 @@ namespace RainMeadow.Shared
             }
             return cyphertext;
         }
-        byte[] MakeUnreliableNonce() {
+        byte[] MakeUnreliableNonce() 
+        {
             byte[] nonce = new byte[LibSodium.BOX_NONCE_SIZE];
             unsafe {
                 fixed (byte* p_once = &nonce[0]) {
@@ -169,7 +171,8 @@ namespace RainMeadow.Shared
             return nonce;
         }
 
-        byte[] MakeReliableNonce(ulong order) {
+        byte[] MakeReliableNonce(ulong order, byte[] key) 
+        {
             byte[] nonce = BitConverter.GetBytes(order);
             if (!BitConverter.IsLittleEndian)
             {
@@ -178,12 +181,16 @@ namespace RainMeadow.Shared
 
             int initialSize = LibSodium.BOX_NONCE_SIZE - nonce.Length;
             Array.Resize(ref nonce, LibSodium.BOX_NONCE_SIZE);
-            if (initialSize < 0) return nonce;
+            if (initialSize <= 0) return nonce;
             unsafe 
             {
-                fixed (byte* p_once = nonce)
+                fixed (byte *p_key = key, p_once = nonce)
                 {
-                    LibSodium.sodium_memzero(p_once + initialSize, (UIntPtr)(LibSodium.BOX_NONCE_SIZE - initialSize));
+                    Buffer.MemoryCopy(p_key, p_once + initialSize, LibSodium.BOX_NONCE_SIZE - initialSize, key.Length);
+                    if (LibSodium.BOX_NONCE_SIZE > initialSize + key.Length)
+                    {
+                        LibSodium.sodium_memzero(p_once + initialSize + key.Length, (UIntPtr)(LibSodium.BOX_NONCE_SIZE - initialSize - key.Length));
+                    }
                 }
             }
             return nonce;

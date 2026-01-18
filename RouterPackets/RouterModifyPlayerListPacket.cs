@@ -53,7 +53,7 @@ namespace RainMeadow.Shared
             foreach (ushort id in routerIds) writer.Write(id);
             if (operation != Operation.Remove) 
             {
-                SecuredPeerId.SerializeArray(writer, endPoints.ToArray(), processingEndpoint!, true);
+                SecuredPeerId.SerializeArray(writer, endPoints.ToArray(), processingPeer, mePeer, true);
                 foreach (string name in userNames) writer.Write(name);
             }
         }
@@ -72,7 +72,7 @@ namespace RainMeadow.Shared
 
             if (operation != Operation.Remove) 
             {
-                endPoints = SecuredPeerId.DeserializeArray(reader, processingEndpoint!, true).ToList();
+                endPoints = SecuredPeerId.DeserializeArray(reader, processingPeer, mePeer, true).ToList();
                 userNames = new(count);
                 for (ushort i=0; i<count ; i++) {
                     userNames.Add(reader.ReadString());
