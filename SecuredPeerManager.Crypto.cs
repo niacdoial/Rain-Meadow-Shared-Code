@@ -83,7 +83,7 @@ namespace RainMeadow.Shared
 
 
     public partial class SecuredPeerManager : IDisposable
-    {
+    {   
         byte[] private_key;
         byte[] public_key;
         void ResetKeys() 
@@ -108,89 +108,16 @@ namespace RainMeadow.Shared
                 // }
             }
 
-            foreach (RemotePeer peer in peers)
-            {
-                peer.shared_key = null;
-                peer.acked_pubkey = false;
-            }
-
+            foreach (RemotePeer peer in peers) ForgetPeer(peer);
             Me.publicKey = public_key;
         }
 
-        void ComputeSharedKey(RemotePeer peer) {
-            if (peer.shared_key == null) 
-            {
-                peer.shared_key = new byte[LibSodium.BOX_DERVK_SIZE];
-                unsafe 
-                {
-                    fixed(byte *p_conn_sk = this.private_key, p_peer_pk = peer.id.publicKey, p_shk = peer.shared_key) 
-                    {
-                        if (LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk) != 0) 
-                            throw new Exception("failed to precompute shared communication key");
-                    }
-                }
-            }
-        }
-
-        byte[]? SodiumDecodePacket(byte[] cyphertext, byte[] nonce, RemotePeer peer) {
-            if (cyphertext.Length <= LibSodium.BOX_MAC_SIZE) throw new InvalidProgrammerException("cypher text size less then MAC size");
-            byte[] cleartext = new byte[cyphertext.Length - LibSodium.BOX_MAC_SIZE];
-            ComputeSharedKey(peer);
-            unsafe {
-                fixed (byte *p_shk = peer.shared_key, p_once = nonce, p_clear = cleartext, p_cypher = cyphertext)
-                {
-                    if (LibSodium.crypto_box_open_easy_afternm(p_clear, p_cypher, (ulong)cyphertext.Length, p_once, p_shk) != 0) 
-                        return null;
-                }
-            }
-            return cleartext;
-        }
-
-        byte[]? SodiumEncodePacket(byte[] cleartext, byte[] nonce, RemotePeer peer) 
-        {
-            if (cleartext.Length == 0) throw new InvalidProgrammerException("Attempted to encode empty packet");
-            if (LibSodium.BOX_NONCE_SIZE != nonce.Length) throw new InvalidProgrammerException("nonce length mismatch");
-            byte[] cyphertext = new byte[cleartext.Length + LibSodium.BOX_MAC_SIZE];
-            ComputeSharedKey(peer);
-            unsafe {
-                fixed (byte* p_shk = &peer.shared_key[0], p_once = &nonce[0], p_clear = &cleartext[0], p_cypher = &cyphertext[0]) {
-                    if (LibSodium.crypto_box_easy_afternm(p_cypher, p_clear, (ulong)cleartext.Length, p_once, p_shk) != 0) 
-                        throw new Exception("crypto_box_easy_afternm failed");
-                }
-            }
-            return cyphertext;
-        }
-        byte[] MakeUnreliableNonce() 
+        static byte[] MakeNonce() 
         {
             byte[] nonce = new byte[LibSodium.BOX_NONCE_SIZE];
             unsafe {
-                fixed (byte* p_once = &nonce[0]) {
+                fixed (byte* p_once = nonce) {
                     LibSodium.randombytes_buf(p_once, (UIntPtr)LibSodium.BOX_NONCE_SIZE);
-                }
-            }
-            return nonce;
-        }
-
-        byte[] MakeReliableNonce(ulong order, byte[] key) 
-        {
-            byte[] nonce = BitConverter.GetBytes(order);
-            if (!BitConverter.IsLittleEndian)
-            {
-                Array.Reverse(nonce);
-            }
-
-            int initialSize = LibSodium.BOX_NONCE_SIZE - nonce.Length;
-            Array.Resize(ref nonce, LibSodium.BOX_NONCE_SIZE);
-            if (initialSize <= 0) return nonce;
-            unsafe 
-            {
-                fixed (byte *p_key = key, p_once = nonce)
-                {
-                    Buffer.MemoryCopy(p_key, p_once + initialSize, LibSodium.BOX_NONCE_SIZE - initialSize, key.Length);
-                    if (LibSodium.BOX_NONCE_SIZE > initialSize + key.Length)
-                    {
-                        LibSodium.sodium_memzero(p_once + initialSize + key.Length, (UIntPtr)(LibSodium.BOX_NONCE_SIZE - initialSize - key.Length));
-                    }
                 }
             }
             return nonce;

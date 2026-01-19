@@ -1,14 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
-using System.Threading;
-using System.Threading.Tasks;
+
 
 
 
@@ -123,10 +119,10 @@ namespace RainMeadow.Shared
         }
 
 
-        public string GetGenericInviteCode() {
-            var invitecode = LibSodium.BinToHex(this.public_key);
-            return $"{invitecode}@X.X.X.X:{this.port}";
-        }
+        // public string GetGenericInviteCode() {
+        //     var invitecode = LibSodium.BinToHex(this.public_key);
+        //     return $"{invitecode}@X.X.X.X:{this.port}";
+        // }
 
         public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true) 
         {
@@ -192,20 +188,14 @@ namespace RainMeadow.Shared
                 if (packet.Length > 0 && flags != PacketFlags.Acknoledgement)
                 {
                     if (security.HasFlag(SecurityFlags.Boxed))
-                    {
-                        byte[] nonce;
-                        if (ack.HasValue)
-                        {
-                            nonce = MakeReliableNonce(ack.Value, public_key);
-                        }
-                        else
-                        {
-                            nonce = MakeUnreliableNonce();
-                            writer.Write(nonce);
-                        }
+                    { 
+                        if (peer.shared_key is null) throw new Exception("Attempted to send boxed packet to peer with null sharedkey");
+                        byte[] nonce = MakeNonce();
+                        writer.Write(nonce);
 
                         // SharedCodeLogger.Debug($"to {peer}: nonce: {LibSodium.BinToHex(nonce!)}, cleartext: {LibSodium.BinToHex(packet)}");
-                        var cypherText = SodiumEncodePacket(packet, nonce!, peer);
+                        byte[]? cypherText = null;
+                        LibSodium.SodiumEncodePacket(packet, nonce, peer.shared_key, ref cypherText);
                         if (cypherText == null) {
                             SharedCodeLogger.Error("Failed to encrypt packet");
                             return;
@@ -309,25 +299,16 @@ namespace RainMeadow.Shared
                                     return null;
                                 }
 
-                                if (sender.publicKey is null) 
+                                if (peer.shared_key is null) 
                                 {
-                                    SharedCodeLogger.Error($"Boxed packet from sender with unknown public key: {sender}");
+                                    SharedCodeLogger.Error($"Boxed packet from sender with unknown shared key: {sender}");
                                     return null;
                                 }
 
                                 boxed = true;
-                                byte[] nonce;
-                                if (flags.HasFlag(PacketFlags.Reliable))
-                                {
-                                    nonce = MakeReliableNonce(ack, sender.publicKey);
-                                }
-                                else
-                                {
-                                    nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
-                                }
-
+                                byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
                                 // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                encodedData = SodiumDecodePacket(clearText, nonce, peer);
+                                encodedData = LibSodium.SodiumDecodePacket(clearText, nonce, peer.shared_key);
                                 if (encodedData is null)
                                 {
                                     SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
@@ -398,7 +379,7 @@ namespace RainMeadow.Shared
 
         RemotePeer ReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey) 
         {
-            if (pubKey.Length != LibSodium.BOX_PK_SIZE) throw new InvalidProgrammerException("Packet too short");
+            if (pubKey.Length != LibSodium.BOX_PK_SIZE) throw new Exception("Packet too short");
             switch (currentPeerId.Status)
             {
                 case SecuredPeerId.PeerStatus.PendingPublicKey:
@@ -413,14 +394,7 @@ namespace RainMeadow.Shared
                     else
                     {
                         // we need to implement resetting keys to avoid nonce issues.
-                        SharedCodeLogger.Debug($"Client changed publickeys from {currentPeerId} -> {pubKey}");
-                        RemotePeer? peer = GetRemotePeer(currentPeerId, true);
-                        if (peer is not null)
-                        {
-                            currentPeerId.publicKey = pubKey;
-                            peer.id = currentPeerId;
-                        }
-                        
+                        SharedCodeLogger.Error($"Client attempted to change publickeys from {currentPeerId} -> {pubKey}");
                     }
                     break;
             }

@@ -1,6 +1,8 @@
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
+using RainMeadow.Shared;
+using RainMeadow;
 // using System.Net;
 // using System.Linq;
 // using System.IO;
@@ -140,7 +142,7 @@ namespace Sodium {
         // ///////////////////////////////////////////
         // Wrapped part:
 
-        static bool _initialised = false;
+        // static bool _initialised = false;
 
         public readonly static int BOX_MAC_SIZE;
         public readonly static int BOX_NONCE_SIZE;
@@ -202,5 +204,67 @@ namespace Sodium {
             return binary;
         }
 
+        public static byte[] ComputeSharedKey(byte[] private_key, byte[] public_key) {
+            byte[] shared_key = new byte[LibSodium.BOX_DERVK_SIZE];
+            unsafe 
+            {
+                fixed(byte *p_conn_sk = private_key, p_peer_pk = public_key, p_shk = shared_key) 
+                {
+                    if (LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk) != 0) 
+                        throw new Exception("failed to precompute shared communication key");
+                }
+            }
+            return shared_key;
+        }
+
+        public static byte[]? SodiumDecodePacket(byte[] cyphertext, byte[] nonce, byte[] shared_key) {
+            byte[] cleartext = new byte[cyphertext.Length - LibSodium.BOX_MAC_SIZE];
+            unsafe {
+                fixed (byte *p_shk = shared_key, p_nonce = nonce, p_clear = cleartext, p_cypher = cyphertext)
+                {
+                    SodiumDecodePacket(p_cypher, cyphertext.Length, p_nonce, nonce.Length, p_shk, shared_key.Length, p_clear);
+                }
+            }
+            return cleartext;
+        }
+
+        public unsafe static void SodiumDecodePacket(byte *p_cypher, int cypher_len, 
+                byte *p_nonce, int nonce_len, byte *p_shk, int shared_key_len, byte *p_clear) 
+        {
+            if (cypher_len <= LibSodium.BOX_MAC_SIZE) throw new InvalidProgrammerException("cypher text size less then MAC size");
+            if (nonce_len != BOX_NONCE_SIZE) throw new InvalidProgrammerException("nonce length mismatch");
+            if (shared_key_len != BOX_DERVK_SIZE) throw new InvalidProgrammerException("shared key length mismatch");
+            
+            if (LibSodium.crypto_box_open_easy_afternm(p_clear, p_cypher, (ulong)cypher_len, p_nonce, p_shk) != 0) 
+                throw new Exception("crypto_box_easy_afternm failed");
+            return;
+        }
+
+
+
+        public static int SodiumEncodePacketSize(int clearTextLen) => clearTextLen + LibSodium.BOX_MAC_SIZE;
+        public static void SodiumEncodePacket(byte[] cleartext, byte[] nonce, byte[] shared_key, ref byte[]? cyphertext) 
+        {
+            if (cyphertext is null) cyphertext = new byte[cleartext.Length + LibSodium.BOX_MAC_SIZE];
+            unsafe
+            {
+                fixed (byte *p_clear = cleartext, p_cypher = cyphertext, p_shk = shared_key, p_nonce = nonce)
+                {
+                    SodiumEncodePacket(p_clear, cleartext.Length, p_nonce, nonce.Length, p_shk, shared_key.Length, p_cypher);
+                }
+            }
+        }
+
+        public unsafe static void SodiumEncodePacket(byte *p_clear, int clear_len, 
+                byte *p_nonce, int nonce_len, byte *p_shk, int shared_key_len, byte *p_cypher) 
+        {
+            if (clear_len == 0) throw new InvalidProgrammerException("Attempted to encode empty packet");
+            if (nonce_len != BOX_NONCE_SIZE) throw new InvalidProgrammerException("nonce length mismatch");
+            if (shared_key_len != BOX_DERVK_SIZE) throw new InvalidProgrammerException("shared key length mismatch");
+            
+            if (LibSodium.crypto_box_easy_afternm(p_cypher, p_clear, (ulong)clear_len, p_nonce, p_shk) != 0) 
+                throw new Exception("crypto_box_easy_afternm failed");
+            return;
+        }
     }
 }

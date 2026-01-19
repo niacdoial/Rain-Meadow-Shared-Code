@@ -296,7 +296,7 @@ namespace RainMeadow.Shared
                         manager.SendRaw(
                             Array.Empty<byte>(),
                             this,
-                            PacketFlags.Unreliable,
+                            PacketFlags.Acknoledgement,
                             acked_pubkey? SecurityFlags.ClearText : SecurityFlags.SendPubKey
                         );
                     }
@@ -334,6 +334,11 @@ namespace RainMeadow.Shared
                     peerId.ValidateCryptStatus(false, false, true);
                     peer = new RemotePeer(this, peerId);
                     peers.Add(peer);
+                }
+
+                if (peer is not null && peer.id.publicKey is not null)
+                {
+                    peer.shared_key = LibSodium.ComputeSharedKey(private_key, peer.id.publicKey);
                 }
 
                 return peer;
