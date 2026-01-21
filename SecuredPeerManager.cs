@@ -289,10 +289,12 @@ namespace RainMeadow.Shared
                         if (stream.Length - stream.Position > 0)
                         {
                             sender.ValidateCryptStatus(true, !security.HasFlag(SecurityFlags.Boxed));
-                            byte[] clearText = new byte[stream.Length - stream.Position];
-                            stream.Read(clearText, 0, clearText.Length);
+                            
                             if (security.HasFlag(SecurityFlags.Boxed))
                             {
+                                byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
+                                byte[] clearText = new byte[stream.Length - stream.Position];
+                                stream.Read(clearText, 0, clearText.Length);
 
                                 if (peer is null) 
                                 {
@@ -307,7 +309,7 @@ namespace RainMeadow.Shared
                                 }
 
                                 boxed = true;
-                                byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
+                                
                                 // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
                                 encodedData = LibSodium.SodiumDecodePacket(clearText, nonce, peer.shared_key);
                                 if (encodedData is null)
@@ -319,7 +321,8 @@ namespace RainMeadow.Shared
                             else
                             {
                                 // SharedCodeLogger.Debug($"from: {sender}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                encodedData = clearText;
+                                encodedData = new byte[stream.Length - stream.Position];
+                                stream.Read(encodedData, 0, encodedData.Length);
                             }
                         }
                     }
