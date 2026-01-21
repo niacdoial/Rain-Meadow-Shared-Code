@@ -141,6 +141,7 @@ namespace RainMeadow.Shared
             {
                 if (boxed) security_flags = security_flags | SecurityFlags.Boxed;
                 if (!peer.acked_pubkey) security_flags = security_flags | SecurityFlags.SendPubKey;
+                if (peer.id.Status != SecuredPeerId.PeerStatus.Connected)  security_flags = security_flags | SecurityFlags.RequestPubKey;
             }
 
             SendRaw(packet, peer, packet_flags, security_flags);
@@ -268,7 +269,6 @@ namespace RainMeadow.Shared
 
                     if (peer is not null)
                     {
-                        sender.CompareAndUpdate(peer.id);
                         peer.acked_pubkey = true;
                     }
                     else if (flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())

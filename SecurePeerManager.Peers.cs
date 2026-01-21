@@ -292,6 +292,7 @@ namespace RainMeadow.Shared
                         
                         if (!acked_pubkey) flags = flags | SecurityFlags.SendPubKey;
                         if (packet.boxed) flags = flags | SecurityFlags.Boxed;
+                        if (id.Status != SecuredPeerId.PeerStatus.Connected) flags = flags | SecurityFlags.RequestPubKey;
                         manager.SendRaw(packet.data, this, PacketFlags.Reliable, flags);
                     }
                     else
