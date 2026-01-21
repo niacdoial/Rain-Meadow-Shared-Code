@@ -233,7 +233,7 @@ namespace RainMeadow.Shared
             if ((!blocking) && socket.Available == 0) return null;
 
             byte[] rawBuffer = socket.Available > MTU? new byte[socket.Available] : reusableRecvBuffer;
-            EndPoint? senderEndPoint = null;
+            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, port);
 
             socket.Blocking = blocking;
             socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime / Math.Max(peers.Count, 1);

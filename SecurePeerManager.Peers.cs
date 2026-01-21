@@ -116,9 +116,6 @@ namespace RainMeadow.Shared
             if (reader.ReadBoolean()) public_key = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
             
             byte flags = reader.ReadByte();
-            reader.ReadByte();
-
-            ushort port = reader.ReadUInt16();
             if ((flags & 0b01) == 0b01) // It's them
             {
                 return new SecuredPeerId(from.endPoint, public_key);
@@ -129,29 +126,34 @@ namespace RainMeadow.Shared
             }
             else
             {
-                IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte()));
+                ushort port = reader.ReadUInt16();
+                IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte())); 
                 return new SecuredPeerId(new IPEndPoint(address, port), public_key);
             }
         }
 
         public void Serialize(BinaryWriter writer, SecuredPeerId to, SecuredPeerId me) 
         {
-            writer.Write(publicKey != null);
-            if (publicKey != null) writer.Write(publicKey);
+
+            bool hasPubKey = publicKey != null;
+            writer.Write(hasPubKey);
+            if (hasPubKey) writer.Write(publicKey, 0, LibSodium.BOX_PK_SIZE);
             
             bool isLoopback = SharedPlatform.CompareIPEndpoints(to.endPoint, me.endPoint);
             bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
 
-            byte flags = 0;
-            if (isLoopback) flags |= 0b01;
-            if (isThem) flags |= 0b10;
-            writer.Write(flags);
+            int flags = 0;
+            if (isLoopback) flags = flags | 0b01;
+            if (isThem) flags = flags | 0b10;
+            writer.Write((byte)flags);
 
 
             if (!isThem && !isLoopback)
             {
-                writer.Write(endPoint.Port);
-                writer.Write(endPoint.Address.MapToIPv4().GetAddressBytes());
+                writer.Write((ushort)endPoint.Port);
+                byte[] address_bytes = endPoint.Address.GetAddressBytes();
+                writer.Write((byte)address_bytes.Length);
+                writer.Write(address_bytes);
             }
         }
 
@@ -159,7 +161,7 @@ namespace RainMeadow.Shared
         /// The functions that do not need a separate mechanism to deal with this.
         public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, SecuredPeerId me, bool nullable = false) 
         {
-            writer.Write((byte)peers.Length);   
+            writer.Write((byte)peers.Length);  
             foreach (SecuredPeerId? peer in peers) 
             {
                 
