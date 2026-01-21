@@ -268,6 +268,7 @@ namespace RainMeadow.Shared
 
                     if (peer is not null)
                     {
+                        sender.CompareAndUpdate(peer.id);
                         peer.acked_pubkey = true;
                     }
                     else if (flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())

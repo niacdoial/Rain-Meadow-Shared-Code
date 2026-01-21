@@ -97,6 +97,7 @@ namespace RainMeadow.Shared
             if (publicKey != null) 
             {
                 builder.Append(LibSodium.BinToHex(publicKey));
+                builder.Append("@");
             }
 
             builder.Append(endPoint);

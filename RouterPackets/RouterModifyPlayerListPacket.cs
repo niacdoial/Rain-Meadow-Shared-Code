@@ -26,11 +26,10 @@ namespace RainMeadow.Shared
         public RouterModifyPlayerListPacket ( ) { }
         public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId?> endPoints, List<string> userNames)
         {
-            if (routerIds.Count == endPoints.Count && routerIds.Count == userNames.Count) {
-            } else {
-                throw new Exception("incoherent counts in ModifyPlayerList arguments");
-            }
+            
+            if (routerIds.Count != endPoints.Count || routerIds.Count != userNames.Count) throw new Exception("incoherent counts in ModifyPlayerList arguments");
 
+            boxed = true;
             this.operation = operation;
             this.routerIds = routerIds;
             this.endPoints = endPoints;
