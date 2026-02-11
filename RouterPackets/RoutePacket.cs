@@ -10,6 +10,7 @@ namespace RainMeadow.Shared
         public override Type type => Type.RouteSessionData;
         public ushort fromRouterID;
         public ushort toRouterID;
+        public const ushort ROUTING_OVERHEAD = 4;
         public RoutePacket() { }
         public RoutePacket(ushort toRouterID, ushort fromRouterID)
         {

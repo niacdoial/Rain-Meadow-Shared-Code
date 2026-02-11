@@ -9,10 +9,10 @@ namespace RainMeadow.Shared
 
         public override Type type => Type.RouterCustomPacket;
         public string key = "";
-        public byte[] data;
+        public ArraySegment<byte> data;
 
         public RouterCustomPacket() { }
-        public RouterCustomPacket(ushort toRouterID, ushort fromRouterID, string key, byte[] data, ushort size) : base(toRouterID, fromRouterID)
+        public RouterCustomPacket(ushort toRouterID, ushort fromRouterID, string key, ArraySegment<byte> data) : base(toRouterID, fromRouterID)
         {
             this.key = key;
             this.data = data;
@@ -22,7 +22,7 @@ namespace RainMeadow.Shared
         {
             base.Serialize(writer);
             writer.Write(key);
-            writer.Write(data);
+            writer.Write(data.Array, data.Offset, data.Count);
         }
 
         public override void Deserialize(BinaryReader reader)
@@ -30,7 +30,7 @@ namespace RainMeadow.Shared
             long orig = reader.BaseStream.Position;
             base.Deserialize(reader);
             key = reader.ReadString();
-            data = reader.ReadBytes((int)(size-(reader.BaseStream.Position-orig)));
+            data = new ArraySegment<byte>(reader.ReadBytes((int)(size-(reader.BaseStream.Position-orig))));
         }
 
         static public event Action<RouterCustomPacket>? ProcessAction = null;

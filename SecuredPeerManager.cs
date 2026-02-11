@@ -211,8 +211,19 @@ namespace RainMeadow.Shared
                     }
                 }
                 
-
-                socket.SendTo(stream.GetBuffer(), (int)stream.Position, SocketFlags.None, peer.id.endPoint);
+                try
+                {
+                    socket.SendTo(stream.GetBuffer(), (int)stream.Position, SocketFlags.None, peer.id.endPoint);
+                }
+                catch (SocketException except)
+                {
+                    SharedCodeLogger.Debug(peer.id.endPoint);
+                    SharedCodeLogger.Debug(stream.Position);
+                    SharedCodeLogger.Debug(except.NativeErrorCode);
+                    SharedCodeLogger.Debug(except.SocketErrorCode);
+                    throw;
+                }
+                
             }
         }
 
