@@ -1,4 +1,6 @@
 ﻿
+using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 
@@ -30,7 +32,7 @@ namespace RainMeadow.Shared.Models
         [SetsRequiredMembers]
         public LobbyParameters(IDictionary<string, string> parameters)
         {
-            Metadata = parameters.ToDictionary();
+            Metadata = new Dictionary<string, string>(parameters);
 
             Pinned = false;
             if (Metadata.TryGetValue(PINNED_KEY, out var pinnedval)) 
