@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
+using RainMeadow.Shared.Models;
 
 namespace RainMeadow.Shared
 {
@@ -21,19 +22,19 @@ namespace RainMeadow.Shared
         public Operation operation { get; private set; }
         public List<ushort> routerIds { get; private set; }
         public List<SecuredPeerId?> endPoints { get; private set; }
-        public List<string> userNames { get; private set; }
+        public List<PlayerInfo> userData { get; private set; }
 
         public RouterModifyPlayerListPacket ( ) { }
-        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId?> endPoints, List<string> userNames)
+        public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds, List<SecuredPeerId?> endPoints, List<PlayerInfo> userData)
         {
             
-            if (routerIds.Count != endPoints.Count || routerIds.Count != userNames.Count) throw new Exception("incoherent counts in ModifyPlayerList arguments");
+            if (routerIds.Count != endPoints.Count || routerIds.Count != userData.Count) throw new Exception("incoherent counts in ModifyPlayerList arguments");
 
             boxed = true;
             this.operation = operation;
             this.routerIds = routerIds;
             this.endPoints = endPoints;
-            this.userNames = userNames;
+            this.userData = userData;
         }
 
         public RouterModifyPlayerListPacket(Operation operation, List<ushort> routerIds)
@@ -41,7 +42,7 @@ namespace RainMeadow.Shared
             this.operation = operation;
             this.routerIds = routerIds;
             this.endPoints = new List<SecuredPeerId?>{};
-            this.userNames = new List<string> {};
+            this.userData = new List<PlayerInfo>{};
         }
 
         public override void Serialize(BinaryWriter writer)
@@ -53,7 +54,7 @@ namespace RainMeadow.Shared
             if (operation != Operation.Remove) 
             {
                 SecuredPeerId.SerializeArray(writer, endPoints.ToArray(), processingPeer, mePeer, true);
-                foreach (string name in userNames) writer.Write(name);
+                foreach (PlayerInfo data in userData) data.Serialize(writer);
             }
         }
 
@@ -72,13 +73,13 @@ namespace RainMeadow.Shared
             if (operation != Operation.Remove) 
             {
                 endPoints = SecuredPeerId.DeserializeArray(reader, processingPeer, mePeer, true).ToList();
-                userNames = new(count);
+                userData = new(count);
                 for (ushort i=0; i<count ; i++) {
-                    userNames.Add(reader.ReadString());
+                    userData.Add(new PlayerInfo(reader));
                 }
             } else {
                 endPoints = new(0);
-                userNames = new(0);
+                userData = new(0);
             }
         }
 

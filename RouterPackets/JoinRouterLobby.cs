@@ -1,30 +1,20 @@
 using System;
 using System.IO;
 using System.Net;
+using RainMeadow.Shared.Models;
 
 namespace RainMeadow.Shared
 {
     public class JoinRouterLobby : Packet
     {
         // always used as a server->player packet
-        public int maxplayers = default;
-        public bool passwordprotected = default;
-        public string name = "";
-        public string mode = "";
-        public string mods = "";
-        public string bannedMods = "";
+        LobbyParameters lobbyParameters;
         public ushort assignedRoutingID;
 
         public JoinRouterLobby() { }
-        public JoinRouterLobby(ushort assignedRoutingID, int maxplayers, string name, bool passwordprotected, string mode, string highImpactMods = "", string bannedMods = "")
+        public JoinRouterLobby(ushort assignedRoutingID, LobbyParameters lobbyParameters)
         {
-            this.maxplayers = maxplayers;
-            this.name = name;
-            this.passwordprotected = passwordprotected;
-            this.mode = mode;
-            this.mods = highImpactMods;
-            this.bannedMods = bannedMods;
-
+            this.lobbyParameters = lobbyParameters;
             this.assignedRoutingID = assignedRoutingID;
         }
 
@@ -33,25 +23,15 @@ namespace RainMeadow.Shared
         public override void Serialize(BinaryWriter writer)
         {
             base.Serialize(writer);
-            writer.Write(maxplayers);
-            writer.Write(passwordprotected);
-            writer.Write(name);
-            writer.Write(mode);
-            writer.Write(mods);
-            writer.Write(bannedMods);
             writer.Write(assignedRoutingID);
+            lobbyParameters.Serialize(writer);
         }
 
         public override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            maxplayers = reader.ReadInt32();
-            passwordprotected = reader.ReadBoolean();
-            name = reader.ReadString();
-            mode = reader.ReadString();
-            mods = reader.ReadString();
-            bannedMods = reader.ReadString();
             assignedRoutingID = reader.ReadUInt16();
+            lobbyParameters = new LobbyParameters(reader);
         }
 
 

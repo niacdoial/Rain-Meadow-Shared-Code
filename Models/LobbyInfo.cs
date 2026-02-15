@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Net;
 
 namespace RainMeadow.Shared.Models
@@ -73,7 +74,38 @@ namespace RainMeadow.Shared.Models
             else throw new FormatException($"Property {BANNED_MODS_KEY} was not filled");
         }
 
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write((UInt16)MaxPlayers);
+            writer.Write(Pinned);
+            writer.Write(PasswordProtected);
+            writer.Write(Mode);
+            writer.Write(Mods);
+            writer.Write(BannedMods);
+            writer.Write((UInt16)Metadata.Count);
+            foreach (var pair in Metadata)
+            {
+                writer.Write(pair.Key);
+                writer.Write(pair.Value);
+            }
+        }
 
+        [SetsRequiredMembers]
+        public LobbyParameters(BinaryReader reader)
+        {
+            MaxPlayers = reader.ReadInt16();
+            Pinned = reader.ReadBoolean();
+            PasswordProtected = reader.ReadBoolean();
+            Mode = reader.ReadString();
+            Mods = reader.ReadString();
+            BannedMods = reader.ReadString();
+            int md_count = reader.ReadUInt16();
+            Metadata = new();
+            for (int i = 0; i < md_count; i++)
+            {
+                Metadata.Add(reader.ReadString(), reader.ReadString()); 
+            }
+        }
     }
 
 
