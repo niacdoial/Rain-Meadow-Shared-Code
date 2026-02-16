@@ -5,18 +5,16 @@ namespace RainMeadow.Shared.Models
 {
     public class PlayerInfo
     {
-        public string? sub;
-        public string? publicKey;
-
-        public required string username;
+        public string sub;
+        public string username;
+        public string publicKey;
+        
         public bool IsDev = false;
         public bool IsTrustedCommunity = false;
         public string? CapeEntry;
 
 
         public PlayerInfo() {}
-
-        [SetsRequiredMembers]
         public PlayerInfo(BinaryReader reader)
         {
             if (reader.ReadBoolean())

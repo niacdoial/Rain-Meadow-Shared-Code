@@ -19,18 +19,20 @@ namespace RainMeadow.Shared.Models
         public int MaxPlayers = 32;
         public bool Pinned;
         public bool PasswordProtected;
-        required public string Mode;
-        required public string Mods;
-        required public string BannedMods;
+        public string Mode;
+        public string Mods;
+        public string BannedMods;
 
         public Dictionary<string, string> Metadata;
 
         public LobbyParameters()
         {
             Metadata = new Dictionary<string, string>();
+            Mode = "Meadow";
+            Mods = "";
+            BannedMods = "";
         }
 
-        [SetsRequiredMembers]
         public LobbyParameters(IDictionary<string, string> parameters)
         {
             Metadata = new Dictionary<string, string>(parameters);
@@ -90,7 +92,6 @@ namespace RainMeadow.Shared.Models
             }
         }
 
-        [SetsRequiredMembers]
         public LobbyParameters(BinaryReader reader)
         {
             MaxPlayers = reader.ReadInt16();
@@ -109,13 +110,16 @@ namespace RainMeadow.Shared.Models
     }
 
 
-    public record class GameLiftLobbyInfo
+    public class GameLiftLobbyInfo
     {
-        public required string Name;
-        public required string ID;
-        public required string EndPoint;
-        public required int PlayerCount = 0;
-        public required LobbyParameters Parameters;
+        public string Name;
+        public string ID;
+        public string EndPoint;
+        public int PlayerCount = 0;
+        public LobbyParameters Parameters;
+               
+        #pragma warning disable CS8618
         public GameLiftLobbyInfo() {}
+        #pragma warning restore CS8618
     }
 }
