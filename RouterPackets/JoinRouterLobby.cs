@@ -8,12 +8,14 @@ namespace RainMeadow.Shared
     public class JoinRouterLobby : Packet
     {
         // always used as a server->player packet
-        LobbyParameters lobbyParameters;
+        public string name;
+        public LobbyParameters lobbyParameters;
         public ushort assignedRoutingID;
 
         public JoinRouterLobby() { }
-        public JoinRouterLobby(ushort assignedRoutingID, LobbyParameters lobbyParameters)
+        public JoinRouterLobby(ushort assignedRoutingID,  string name, LobbyParameters lobbyParameters)
         {
+            this.name = name;
             this.lobbyParameters = lobbyParameters;
             this.assignedRoutingID = assignedRoutingID;
         }
@@ -24,6 +26,7 @@ namespace RainMeadow.Shared
         {
             base.Serialize(writer);
             writer.Write(assignedRoutingID);
+            writer.Write(name);
             lobbyParameters.Serialize(writer);
         }
 
@@ -31,6 +34,7 @@ namespace RainMeadow.Shared
         {
             base.Deserialize(reader);
             assignedRoutingID = reader.ReadUInt16();
+            name = reader.ReadString();
             lobbyParameters = new LobbyParameters(reader);
         }
 
