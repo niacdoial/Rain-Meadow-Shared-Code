@@ -86,7 +86,7 @@ namespace RainMeadow.Shared
             Acknoledgement = 0b10,
         }
 
-        [Flags] 
+        [Flags]
         public enum SecurityFlags: byte {
             ClearText = 0b00, // 00
             Boxed = 0b01, // 01
@@ -97,7 +97,7 @@ namespace RainMeadow.Shared
 
         public readonly SecuredPeerId Me;
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
-            InitSocket();
+            InitSocket((ushort)default_port, (ushort)port_attempts);
             // this.identity_pk = new byte[LibSodium.SIGN_PK_SIZE];
             // this.identity_sk = new byte[LibSodium.SIGN_SK_SIZE];
 
@@ -105,7 +105,7 @@ namespace RainMeadow.Shared
             this.ResetKeys();
         }
 
-        public SecuredPeerId[] GetBroadcastPeerIDs() 
+        public SecuredPeerId[] GetBroadcastPeerIDs()
         {
             List<SecuredPeerId> broadcastables = new List<SecuredPeerId>();
             for (int broadcast_port = DEFAULT_PORT;
@@ -124,11 +124,11 @@ namespace RainMeadow.Shared
         //     return $"{invitecode}@X.X.X.X:{this.port}";
         // }
 
-        public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true) 
+        public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true)
         {
             // Create a temporary peer for remote packets. Otherwise don't bother.
             RemotePeer? peer = GetRemotePeer(peerId, !packet_flags.HasFlag(PacketFlags.Broadcast));
-            if (peer is null) peer = new RemotePeer(this, peerId); 
+            if (peer is null) peer = new RemotePeer(this, peerId);
             if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
                 peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
@@ -178,10 +178,10 @@ namespace RainMeadow.Shared
                 {
                     writer.Write(public_key);
                 }
-                
+
                 // write ack
                 ulong? ack = null;
-                if (flags.HasFlag(PacketFlags.Reliable)) ack = peer.wanted_acknowledgement; 
+                if (flags.HasFlag(PacketFlags.Reliable)) ack = peer.wanted_acknowledgement;
                 else if (flags == PacketFlags.Acknoledgement) ack = peer.remote_acknowledgement;
                 if (ack.HasValue) writer.Write(ack.Value);
 
@@ -189,7 +189,7 @@ namespace RainMeadow.Shared
                 if (packet.Length > 0 && flags != PacketFlags.Acknoledgement)
                 {
                     if (security.HasFlag(SecurityFlags.Boxed))
-                    { 
+                    {
                         if (peer.shared_key is null) throw new Exception("Attempted to send boxed packet to peer with null sharedkey");
                         byte[] nonce = MakeNonce();
                         writer.Write(nonce);
@@ -210,7 +210,7 @@ namespace RainMeadow.Shared
                         writer.Write(packet);
                     }
                 }
-                
+
                 try
                 {
                     socket.SendTo(stream.GetBuffer(), (int)stream.Position, SocketFlags.None, peer.id.endPoint);
@@ -223,7 +223,7 @@ namespace RainMeadow.Shared
                     SharedCodeLogger.Debug(except.SocketErrorCode);
                     throw;
                 }
-                
+
             }
         }
 
@@ -241,14 +241,36 @@ namespace RainMeadow.Shared
             sender = null;
             boxed = false;
 
-            
             if ((!blocking) && socket.Available == 0) return null;
 
-            byte[] rawBuffer = socket.Available > MTU? new byte[socket.Available] : reusableRecvBuffer;
-            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, port);
+            if (blocking)
+            {
+                List<Socket> listenList = new();
+                listenList.Add(socket);
+                try
+                {
+                    Socket.Select(
+                        listenList, null, null,
+                        (int)SharedPlatform.heartbeatTime * 1000 / Math.Max(peers.Count, 1)
+                    );
+                }
+                catch (Exception except)
+                {
+                    if (except is SocketException skEx && skEx.ErrorCode == 10060)
+                    {/* it's a timeout, ignore it */}
+                    else
+                    {
+                        // if the error is not a timeout
+                        SharedCodeLogger.Error(except);
+                    }
+                    return null;
+                }
+                if (socket.Available==0) return null;
+            }
 
-            socket.Blocking = blocking;
-            socket.ReceiveTimeout = (int)SharedPlatform.heartbeatTime / Math.Max(peers.Count, 1);
+            byte[] rawBuffer = socket.Available > MTU? new byte[socket.Available] : reusableRecvBuffer;
+
+            EndPoint senderEndPoint = new IPEndPoint(IPAddress.Loopback, port);
             int len = socket.ReceiveFrom(rawBuffer, ref senderEndPoint);
 
             if (senderEndPoint is not IPEndPoint ipend) return null;
@@ -257,7 +279,7 @@ namespace RainMeadow.Shared
             RemotePeer? peer = GetRemotePeer(sender, false);
             if (peer != null) sender = peer.id;
 
-            try 
+            try
             {
                 using (MemoryStream stream = new(rawBuffer, 0, len, false))
                 using (BinaryReader reader = new(stream))
@@ -293,34 +315,34 @@ namespace RainMeadow.Shared
                     ulong ack = 0;
                     if (flags.HasFlag(PacketFlags.Reliable) || flags == PacketFlags.Acknoledgement) ack = reader.ReadUInt64();
 
-                   
+
                     byte[]? encodedData = null;
                     if (flags != PacketFlags.Acknoledgement)
                     {
                         if (stream.Length - stream.Position > 0)
                         {
                             sender.ValidateCryptStatus(true, !security.HasFlag(SecurityFlags.Boxed));
-                            
+
                             if (security.HasFlag(SecurityFlags.Boxed))
                             {
                                 byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
                                 byte[] clearText = new byte[stream.Length - stream.Position];
                                 stream.Read(clearText, 0, clearText.Length);
 
-                                if (peer is null) 
+                                if (peer is null)
                                 {
                                     SharedCodeLogger.Error($"Boxed packet from unknown sender: {sender}");
                                     return null;
                                 }
 
-                                if (peer.shared_key is null) 
+                                if (peer.shared_key is null)
                                 {
                                     SharedCodeLogger.Error($"Boxed packet from sender with unknown shared key: {sender}");
                                     return null;
                                 }
 
                                 boxed = true;
-                                
+
                                 // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
                                 encodedData = LibSodium.SodiumDecodePacket(clearText, nonce, peer.shared_key);
                                 if (encodedData is null)
@@ -337,13 +359,13 @@ namespace RainMeadow.Shared
                             }
                         }
                     }
-                    
+
                     if (flags.HasFlag(PacketFlags.Reliable))
                     {
-                        if (EventMath.IsNewerOrEqual(ack, peer!.remote_acknowledgement)) 
+                        if (EventMath.IsNewerOrEqual(ack, peer!.remote_acknowledgement))
                         {
                             ++peer.remote_acknowledgement;
-                            if (EventMath.IsNewerOrEqual(ack, peer.remote_acknowledgement)) 
+                            if (EventMath.IsNewerOrEqual(ack, peer.remote_acknowledgement))
                             {
                                 SharedCodeLogger.Error($"skipped packets {peer.remote_acknowledgement}-{ack}");
                                 peer.remote_acknowledgement = ack;
@@ -352,13 +374,13 @@ namespace RainMeadow.Shared
                             SendRaw(Array.Empty<byte>(), peer, PacketFlags.Acknoledgement, SecurityFlags.ClearText);
                         }
                     }
-                    
+
                     if (flags == PacketFlags.Acknoledgement)
                     {
-                        if (EventMath.IsNewer(ack, peer!.wanted_acknowledgement)) 
+                        if (EventMath.IsNewer(ack, peer!.wanted_acknowledgement))
                         {
                             ++peer.wanted_acknowledgement;
-                            if (EventMath.IsNewer(ack, peer.wanted_acknowledgement)) 
+                            if (EventMath.IsNewer(ack, peer.wanted_acknowledgement))
                             {
                                 // this can happen if we leave the Meadow menu then reenter it before the matchmaking server times us out
                                 SharedCodeLogger.Error("Reliable Packet Acknowledgement too advanced! We might have sent a packet too early?");
@@ -366,11 +388,11 @@ namespace RainMeadow.Shared
                                 peer.wanted_acknowledgement = ack;
                             }
 
-                            if (peer.outgoingPackets.Count > 0) 
+                            if (peer.outgoingPackets.Count > 0)
                             {
                                 peer.outgoingPackets.Dequeue();
-                            } 
-                            else 
+                            }
+                            else
                             {
                                 SharedCodeLogger.Error("Reliable Packet Acknowledgement without corresponding queued message! Expect more problems in ordered communications.");
                             }
@@ -392,7 +414,7 @@ namespace RainMeadow.Shared
         }
 
 
-        RemotePeer ReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey) 
+        RemotePeer ReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey)
         {
             if (pubKey.Length != LibSodium.BOX_PK_SIZE) throw new Exception("Packet too short");
             switch (currentPeerId.Status)
@@ -422,13 +444,13 @@ namespace RainMeadow.Shared
         ~SecuredPeerManager() => Dispose(false);
         private bool disposed = false;
 
-        public void Dispose() 
+        public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
 
-        public void Dispose(bool disposing) 
+        public void Dispose(bool disposing)
         {
             if (disposed) return;
             if (disposing)
