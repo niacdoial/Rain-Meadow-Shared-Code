@@ -26,8 +26,6 @@ namespace RainMeadow.Shared
             // Router stuff
             BeginRouterSession,
 
-            [Obsolete("Stop communication to disconnect instead")]
-            EndRouterSession, 
             RouterModifyPlayerList,
             PlayerJoiningDecision,
             JoinRouterLobby,
@@ -35,11 +33,8 @@ namespace RainMeadow.Shared
             RouterChatMessage,
             RouterCustomPacket,
 
-            // placeholder Router stuff
-            [Obsolete]
+            // direct-to-lobbyserver Router stuff
             PublishRouterLobby,
-            [Obsolete]
-            LobbyIsEmpty,
         }
 
         public delegate void BuildPacket_t(Type type, ref Packet? packet);
@@ -132,6 +127,7 @@ namespace RainMeadow.Shared
                     Type.RouterChatMessage => new RouterChatMessage(),
                     Type.RouterCustomPacket => new RouterCustomPacket(),
                     Type.PlayerJoiningDecision => new PlayerJoiningDecision(),
+                    Type.PublishRouterLobby => new PublishRouterLobby(),
                     _ => null
                 };
             }
