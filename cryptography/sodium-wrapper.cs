@@ -188,7 +188,7 @@ namespace Sodium {
         }
 
         public static byte[] HexToBin(string hex) {
-            byte[] binary = new byte[(hex.Length-1)/2];
+            byte[] binary = new byte[hex.Length/2];
             byte[] buff = Encoding.UTF8.GetBytes(hex.ToCharArray());
 
             unsafe{

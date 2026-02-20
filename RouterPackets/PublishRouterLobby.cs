@@ -8,14 +8,16 @@ namespace RainMeadow.Shared
     public class PublishRouterLobby : Packet
     {
         // always used as a server->player packet
-        public string name;
+        public string lobbyName;
+        public string userName;
         public LobbyParameters lobbyParameters;
         public bool exposeIPAddress;
 
         public PublishRouterLobby() { }
-        public PublishRouterLobby(string name, LobbyParameters lobbyParameters, bool exposeIPAddress)
+        public PublishRouterLobby(string lobbyName, LobbyParameters lobbyParameters, string userName, bool exposeIPAddress)
         {
-            this.name = name;
+            this.lobbyName = lobbyName;
+            this.userName = userName;
             this.lobbyParameters = lobbyParameters;
             this.exposeIPAddress = exposeIPAddress;
         }
@@ -26,7 +28,8 @@ namespace RainMeadow.Shared
         {
             base.Serialize(writer);
             writer.Write(exposeIPAddress);
-            writer.Write(name);
+            writer.Write(userName);
+            writer.Write(lobbyName);
             lobbyParameters.Serialize(writer);
         }
 
@@ -34,7 +37,8 @@ namespace RainMeadow.Shared
         {
             base.Deserialize(reader);
             exposeIPAddress = reader.ReadBoolean();
-            name = reader.ReadString();
+            userName = reader.ReadString();
+            lobbyName = reader.ReadString();
             lobbyParameters = new LobbyParameters(reader);
         }
 
