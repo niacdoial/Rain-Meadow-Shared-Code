@@ -8,6 +8,7 @@ namespace RainMeadow.Shared
         // always used in player-to-player communication
 
         public override Type type => Type.RouteSessionData;
+        public override bool requireBoxed => false;
         public ArraySegment<byte> data;
 
         public RouteSessionData() { }

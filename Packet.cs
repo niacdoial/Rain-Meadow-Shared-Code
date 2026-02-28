@@ -41,6 +41,7 @@ namespace RainMeadow.Shared
         public static event BuildPacket_t packetFactory = delegate { };
 
         public abstract Type type { get; }
+        public virtual bool requireBoxed => true;
         public ushort size = 0;
         public bool boxed = false;
 
@@ -57,6 +58,11 @@ namespace RainMeadow.Shared
 
         public static void Encode(Packet packet, BinaryWriter writer, SecuredPeerId toPeer, SecuredPeerId mePeer)
         {
+            if (packet.requireBoxed && !packet.boxed)
+            {
+                throw new InvalidProgrammerException("Forgot to set encryption for a packet of a type that requires it");
+            }
+
             packet.processingPeer = toPeer;
             packet.mePeer = mePeer;
             writer.Write((byte)packet.type);
@@ -80,12 +86,16 @@ namespace RainMeadow.Shared
             Packet? packet = null;
             packetFactory?.Invoke(type, ref packet);
 
-
-
             if (packet == null)
             {
                 // throw new Exception($"Undetermined packet type ({type}) received");
                 RainMeadow.Error($"Bad Packet Type Recieved {(int)type}");
+                return;
+            }
+
+            if (packet.requireBoxed && !wasBoxed)
+            {
+                SharedCodeLogger.Error("Received a plaintext packet of a type that requires encryption");
                 return;
             }
 
