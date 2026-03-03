@@ -330,8 +330,12 @@ namespace RainMeadow.Shared
         }
 
             List<RemotePeer> peers = new();
+            public bool allowKeylessPeerIDs = false;  // Only allow PeerIds without keys for one specific purpose: directly connecting to LAN lobby hosts, without knowing the key
             public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false)
             {
+                if ((!allowKeylessPeerIDs) && peerId.Status == SecuredPeerId.PeerStatus.PendingPublicKey) {
+                    throw new Exception("Cannot contact a peer without a known key in this situation");
+                }
                 RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
                 if (make && peer == null)
                 {

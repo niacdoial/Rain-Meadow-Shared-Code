@@ -156,6 +156,9 @@ namespace RainMeadow.Shared
             {
                 if (peer.id.Status != SecuredPeerId.PeerStatus.Connected)
                 {
+                    if (!allowKeylessPeerIDs) {
+                        throw new Exception("Cannot contact a peer without a known key in this situation");
+                    }
                     SharedCodeLogger.Error($"Dropping packet attempt for peer with unknown public key, peer: {peer.id} | flags: {flags} | security: {security}");
                     SendRaw(Array.Empty<byte>(), peer, PacketFlags.Unreliable, SecurityFlags.RequestPubKey);
                     return;
@@ -307,7 +310,7 @@ namespace RainMeadow.Shared
                     {
                         peer.acked_pubkey = true;
                     }
-                    else if (flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())
+                    else if ((!allowKeylessPeerIDs) || flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())
                     {
                         SharedCodeLogger.Error($"Recieved packet from {sender}, who haven't started a conversation with. Flags: {flags}, {security}");
                         return null;
@@ -428,6 +431,9 @@ namespace RainMeadow.Shared
             switch (currentPeerId.Status)
             {
                 case SecuredPeerId.PeerStatus.PendingPublicKey:
+                    if (!allowKeylessPeerIDs) {
+                        throw new Exception("Cannot contact a peer without a known key in this situation");
+                    }
                     currentPeerId.publicKey = pubKey;
                     SharedCodeLogger.Debug($"Updated peer ID {currentPeerId} from reply");
                     break;
@@ -441,6 +447,9 @@ namespace RainMeadow.Shared
                         // we need to implement resetting keys to avoid nonce issues.
                         SharedCodeLogger.Error($"Client attempted to change publickeys from {currentPeerId} -> {pubKey}");
                     }
+                    break;
+                default:
+                    throw new InvalidProgrammerException("unhandled peer status value: " + currentPeerId.Status.ToString());
                     break;
             }
 
