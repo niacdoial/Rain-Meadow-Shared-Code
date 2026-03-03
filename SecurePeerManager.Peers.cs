@@ -8,7 +8,7 @@ using System.Text;
 using Sodium;
 
 namespace RainMeadow.Shared
-{    
+{
     public class SecuredPeerId : IEquatable<SecuredPeerId> {
         public enum PeerStatus: byte {
             // ClearTextOnly = 0,  // network-local broadcast purposes, also allowed for the BlackHole placeholder
@@ -16,22 +16,22 @@ namespace RainMeadow.Shared
             Connected,  // Has a known connection pubkey
         }
 
-        public PeerStatus Status 
-        { 
+        public PeerStatus Status
+        {
             get
             {
-                if (publicKey != null) return PeerStatus.Connected;   
+                if (publicKey != null) return PeerStatus.Connected;
                 return PeerStatus.PendingPublicKey;
             }
         }
 
         public readonly IPEndPoint endPoint;
         public byte[]? publicKey;
-        public SecuredPeerId(IPEndPoint endPoint, byte[]? boxPubkey) 
+        public SecuredPeerId(IPEndPoint endPoint, byte[]? boxPubkey)
         {
             this.endPoint = endPoint;
             this.publicKey = boxPubkey;
-            if (boxPubkey != null && boxPubkey.Length != LibSodium.BOX_PK_SIZE) 
+            if (boxPubkey != null && boxPubkey.Length != LibSodium.BOX_PK_SIZE)
                 throw new Exception("malformed pubkey: wrong size");
         }
 
@@ -50,7 +50,7 @@ namespace RainMeadow.Shared
                 {
                     this.publicKey = other.publicKey;
                 }
-                
+
                 return true;
             }
             return false;
@@ -58,7 +58,7 @@ namespace RainMeadow.Shared
 
         public bool IsLoopback() => SharedPlatform.IsLoopback(endPoint.Address);
         public bool IsNetworkLocal() => SharedPlatform.IsEndpointLocal(endPoint.Address);
-        public void ValidateCryptStatus(bool peerIsSender = false, bool forClearText = false, bool internalChecksOnly = false) 
+        public void ValidateCryptStatus(bool peerIsSender = false, bool forClearText = false, bool internalChecksOnly = false)
         {
             switch (this.Status) {
                 case PeerStatus.PendingPublicKey:
@@ -94,7 +94,7 @@ namespace RainMeadow.Shared
         public string ToString(bool debug)
         {
             StringBuilder builder = new StringBuilder();
-            if (publicKey != null) 
+            if (publicKey != null)
             {
                 builder.Append(LibSodium.BinToHex(publicKey));
                 builder.Append("@");
@@ -115,7 +115,7 @@ namespace RainMeadow.Shared
         {
             byte[]? public_key = null;
             if (reader.ReadBoolean()) public_key = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
-            
+
             byte flags = reader.ReadByte();
             if ((flags & 0b01) == 0b01) // It's them
             {
@@ -128,18 +128,18 @@ namespace RainMeadow.Shared
             else
             {
                 ushort port = reader.ReadUInt16();
-                IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte())); 
+                IPAddress address = new IPAddress(reader.ReadBytes(reader.ReadByte()));
                 return new SecuredPeerId(new IPEndPoint(address, port), public_key);
             }
         }
 
-        public void Serialize(BinaryWriter writer, SecuredPeerId to, SecuredPeerId me) 
+        public void Serialize(BinaryWriter writer, SecuredPeerId to, SecuredPeerId me)
         {
 
             bool hasPubKey = publicKey != null;
             writer.Write(hasPubKey);
             if (hasPubKey) writer.Write(publicKey, 0, LibSodium.BOX_PK_SIZE);
-            
+
             bool isLoopback = SharedPlatform.CompareIPEndpoints(to.endPoint, me.endPoint);
             bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
 
@@ -160,12 +160,12 @@ namespace RainMeadow.Shared
 
         /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
         /// The functions that do not need a separate mechanism to deal with this.
-        public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, SecuredPeerId me, bool nullable = false) 
+        public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, SecuredPeerId me, bool nullable = false)
         {
-            writer.Write((byte)peers.Length);  
-            foreach (SecuredPeerId? peer in peers) 
+            writer.Write((byte)peers.Length);
+            foreach (SecuredPeerId? peer in peers)
             {
-                
+
                 if (nullable)
                 {
                     writer.Write(peer is null);
@@ -176,10 +176,10 @@ namespace RainMeadow.Shared
             }
         }
 
-        public static SecuredPeerId?[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho, SecuredPeerId me, bool nullable = false) 
+        public static SecuredPeerId?[] DeserializeArray(BinaryReader reader, SecuredPeerId fromWho, SecuredPeerId me, bool nullable = false)
         {
             SecuredPeerId?[] ret = new SecuredPeerId[reader.ReadByte()];
-            for (int i = 0; i < ret.Length; i++) 
+            for (int i = 0; i < ret.Length; i++)
             {
                 if (nullable)
                 {
@@ -196,26 +196,26 @@ namespace RainMeadow.Shared
             return ret;
         }
 
-        public static SecuredPeerId? GetPeerIdByName(string name) 
+        public static SecuredPeerId? GetPeerIdByName(string name)
         {
             var parts = name.Split('@');
             IPEndPoint? endPoint = null;
 
-            if (parts.Count() == 2) 
+            if (parts.Count() == 2)
             {
                 if (parts[0].Length != 2*LibSodium.BOX_PK_SIZE) return null;
                 endPoint = SharedPlatform.GetEndPointByName(parts[1]);
                 if (endPoint is null) return null;
                 byte[] pubKey = LibSodium.HexToBin(parts[0]);
                 return new SecuredPeerId(endPoint, pubKey);
-            } 
-            else if (parts.Count() == 1) 
+            }
+            else if (parts.Count() == 1)
             {
                 endPoint = SharedPlatform.GetEndPointByName(parts[0]);
                 if (endPoint is null) return null;
                 return new SecuredPeerId(endPoint, null);
-            } 
-            else 
+            }
+            else
             {
                 return null;
             }
@@ -231,11 +231,11 @@ namespace RainMeadow.Shared
             public bool boxed;
         }
 
-        public class RemotePeer : IDisposable 
+        public class RemotePeer : IDisposable
         {
             private SecuredPeerManager manager;
 
-            
+
             // data for connection itself
             public SecuredPeerId id;
             public bool acked_pubkey = false;
@@ -246,7 +246,7 @@ namespace RainMeadow.Shared
             public Queue<OutgoingPacket> outgoingPackets = new Queue<OutgoingPacket>();
             public ulong wanted_acknowledgement = 0;  // the 'packet ID' of the last reliable packet ack'd by peer (1-indexed)
             public ulong remote_acknowledgement = 0;  // the 'packet ID' of the last reliable packet recv'd by us  (1-indexed)
-            
+
 
             public RemotePeer(SecuredPeerManager manager, SecuredPeerId id)
             {
@@ -283,13 +283,13 @@ namespace RainMeadow.Shared
                             if (packet.attempts == 0)
                             {
 
-                                // we failed to send it. 
+                                // we failed to send it.
                                 SharedCodeLogger.Error($"Failed to send packet with ack {wanted_acknowledgement}");
                                 wanted_acknowledgement++;
                                 outgoingPackets.Dequeue();
                             }
                         }
-                        
+
                         if (!acked_pubkey) flags = flags | SecurityFlags.SendPubKey;
                         if (packet.boxed) flags = flags | SecurityFlags.Boxed;
                         if (id.Status != SecuredPeerId.PeerStatus.Connected) flags = flags | SecurityFlags.RequestPubKey;
@@ -305,14 +305,14 @@ namespace RainMeadow.Shared
                         );
                     }
                 }
-            }            
+            }
 
             public bool Disposed { get; private set; }
             public byte[]? shared_key;
             public void Dispose() {
                 if (shared_key is not null)
                 {
-                    unsafe 
+                    unsafe
                     {
                         fixed (byte* p_csk = this.shared_key) {
                             LibSodium.sodium_memzero(p_csk, (UIntPtr)LibSodium.BOX_DERVK_SIZE);
@@ -321,7 +321,7 @@ namespace RainMeadow.Shared
                 }
 
                 Disposed = true;
-            }  
+            }
 
             ~RemotePeer()
             {
@@ -330,10 +330,10 @@ namespace RainMeadow.Shared
         }
 
             List<RemotePeer> peers = new();
-            public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false) 
+            public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false)
             {
                 RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
-                if (make && peer == null) 
+                if (make && peer == null)
                 {
                     peerId.ValidateCryptStatus(false, false, true);
                     peer = new RemotePeer(this, peerId);
@@ -345,6 +345,11 @@ namespace RainMeadow.Shared
                     peer.shared_key = LibSodium.ComputeSharedKey(private_key, peer.id.publicKey);
                 }
 
+                return peer;
+            }
+            public RemotePeer? GetRemotePeer(IPEndPoint peerEndPoint)
+            {
+                RemotePeer? peer = peers.FirstOrDefault(x => SharedPlatform.CompareIPEndpoints(x.id.endPoint, peerEndPoint));
                 return peer;
             }
 
@@ -361,18 +366,18 @@ namespace RainMeadow.Shared
                 }
             }
 
-            public void ForgetPeer(SecuredPeerId peerId) 
+            public void ForgetPeer(SecuredPeerId peerId)
             {
-                foreach (RemotePeer peer in peers.Where(x => peerId == x.id).ToArray()) 
+                foreach (RemotePeer peer in peers.Where(x => peerId == x.id).ToArray())
                 {
                     ForgetPeer(peer);
                 }
             }
 
-            public void ForgetAllPeers() 
+            public void ForgetAllPeers()
             {
-                foreach (RemotePeer peer in peers.ToArray()) 
-                { 
+                foreach (RemotePeer peer in peers.ToArray())
+                {
                     ForgetPeer(peer);
                 }
             }

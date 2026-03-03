@@ -128,7 +128,10 @@ namespace RainMeadow.Shared
         {
             // Create a temporary peer for remote packets. Otherwise don't bother.
             RemotePeer? peer = GetRemotePeer(peerId, !packet_flags.HasFlag(PacketFlags.Broadcast));
-            if (peer is null) peer = new RemotePeer(this, peerId);
+            if (peer is null) {
+                peer = new RemotePeer(this, peerId);
+                RainMeadow.Debug("creating ephemeral peer for ID: " + peerId.ToString());
+            }
             if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
                 peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
@@ -274,10 +277,10 @@ namespace RainMeadow.Shared
             int len = socket.ReceiveFrom(rawBuffer, ref senderEndPoint);
 
             if (senderEndPoint is not IPEndPoint ipend) return null;
-            sender = new SecuredPeerId(ipend as IPEndPoint, null);
 
-            RemotePeer? peer = GetRemotePeer(sender, false);
+            RemotePeer? peer = GetRemotePeer(ipend as IPEndPoint);
             if (peer != null) sender = peer.id;
+            else sender = null;
 
             try
             {
@@ -417,11 +420,16 @@ namespace RainMeadow.Shared
         RemotePeer ReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey)
         {
             if (pubKey.Length != LibSodium.BOX_PK_SIZE) throw new Exception("Packet too short");
+            if (currentPeerId is null)
+            {
+                currentPeerId = new SecuredPeerId(ipsender, pubKey);
+                SharedCodeLogger.Debug($"Created new peer {currentPeerId} from self-introduction");
+            }
             switch (currentPeerId.Status)
             {
                 case SecuredPeerId.PeerStatus.PendingPublicKey:
                     currentPeerId.publicKey = pubKey;
-                    SharedCodeLogger.Debug($"Created new peer {currentPeerId} from self-introduction");
+                    SharedCodeLogger.Debug($"Updated peer ID {currentPeerId} from reply");
                     break;
                 case SecuredPeerId.PeerStatus.Connected:
                     if (currentPeerId.publicKey.SequenceEqual(pubKey))
