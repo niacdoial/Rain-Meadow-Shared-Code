@@ -134,6 +134,7 @@ namespace RainMeadow.Shared
             }
             if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
+                // TODO: pretty sure this attempt counter's still a bug
                 peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
                 if (peer.outgoingPackets.Any()) return;
             }
@@ -145,6 +146,10 @@ namespace RainMeadow.Shared
                 if (boxed) security_flags = security_flags | SecurityFlags.Boxed;
                 if (!peer.acked_pubkey) security_flags = security_flags | SecurityFlags.SendPubKey;
                 if (peer.id.Status != SecuredPeerId.PeerStatus.Connected)  security_flags = security_flags | SecurityFlags.RequestPubKey;
+            }
+            else if (packet_flags.HasFlag(PacketFlags.Broadcast))
+            {
+                security_flags |= SecurityFlags.RequestPubKey | SecurityFlags.SendPubKey;
             }
 
             SendRaw(packet, peer, packet_flags, security_flags);
@@ -308,6 +313,7 @@ namespace RainMeadow.Shared
 
                     if (peer is not null)
                     {
+                        // TODO: ...looks like a bug
                         peer.acked_pubkey = true;
                     }
                     else if ((!allowKeylessPeerIDs) || flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())

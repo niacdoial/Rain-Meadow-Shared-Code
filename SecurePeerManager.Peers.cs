@@ -334,7 +334,9 @@ namespace RainMeadow.Shared
             public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false)
             {
                 if ((!allowKeylessPeerIDs) && peerId.Status == SecuredPeerId.PeerStatus.PendingPublicKey) {
-                    throw new Exception("Cannot contact a peer without a known key in this situation");
+                    if (!peerId.endPoint.Address.Equals(IPAddress.Broadcast))
+                        // broadcast IP gets a pass because you'll need to send packets there outside of a lobby
+                        throw new Exception("Cannot contact a peer without a known key in this situation");
                 }
                 RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
                 if (make && peer == null)
