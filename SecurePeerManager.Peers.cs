@@ -27,6 +27,7 @@ namespace RainMeadow.Shared
 
         public readonly IPEndPoint endPoint;
         public byte[]? publicKey;
+        public string publicKeyStr => LibSodium.BinToHex(publicKey);
         public SecuredPeerId(IPEndPoint endPoint, byte[]? boxPubkey)
         {
             this.endPoint = endPoint;
@@ -96,7 +97,7 @@ namespace RainMeadow.Shared
             StringBuilder builder = new StringBuilder();
             if (publicKey != null)
             {
-                builder.Append(LibSodium.BinToHex(publicKey));
+                builder.Append(publicKeyStr);
                 builder.Append("@");
             }
 
