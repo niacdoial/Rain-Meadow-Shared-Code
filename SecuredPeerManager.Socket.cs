@@ -40,7 +40,7 @@ namespace RainMeadow.Shared
         public byte[] reusableRecvBuffer = new byte[MTU];
 
         public void InitSocket(ushort default_port = DEFAULT_PORT, ushort port_attempts = FIND_PORT_ATTEMPTS) {
-            try 
+            try
             {
                 this.socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 this.socket.Blocking = false;
@@ -49,26 +49,22 @@ namespace RainMeadow.Shared
                 port = default_port;
                 // Proton 8.0/Wine for FreeBSD bug: GetActiveUdpListeners is unavailable and not correctly emulated
 
-                bool alreadyinuse = false;
-                try 
-                {
-                    var activeUdpListeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
-                    for (int i = 0; i < port_attempts; i++) {
-                        port = (ushort)(default_port + i);
-                        alreadyinuse = activeUdpListeners.Any(p => p.Port == port);
-                        if (!alreadyinuse)
-                            break;
+                for (ushort i = 0; i < FIND_PORT_ATTEMPTS; i++) {
+                    port = (ushort)(default_port + i);
+                    try
+                    {
+                        socket.Bind(new IPEndPoint(IPAddress.Any, port));
                     }
-                }  
-                catch (Exception e) 
-                {
-                    RainMeadow.Error($"{e}");
+                    catch (SocketException socketexcept)
+                    {
+                        if (socketexcept.SocketErrorCode != SocketError.AddressAlreadyInUse) throw;
+                        continue;
+                    }
+                    break;
                 }
-
-                if (alreadyinuse) throw new Exception("Failed to claim a socket port");
-                socket.Bind(new IPEndPoint(IPAddress.Any, port));
+                if (!socket.IsBound) throw new Exception("Could not find port for UDP connection");
             }
-            catch (SocketException except) 
+            catch (SocketException except)
             {
                 SharedCodeLogger.Error(except.SocketErrorCode);
                 throw;
