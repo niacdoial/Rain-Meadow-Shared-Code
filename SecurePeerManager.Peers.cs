@@ -9,7 +9,8 @@ using Sodium;
 
 namespace RainMeadow.Shared
 {
-    public class SecuredPeerId : IEquatable<SecuredPeerId> {
+    public class SecuredPeerId : IEquatable<SecuredPeerId> 
+    {
         public enum PeerStatus: byte {
             // ClearTextOnly = 0,  // network-local broadcast purposes, also allowed for the BlackHole placeholder
             PendingPublicKey,  // one current use case: connect to a server then asking the user to double-check the pubkey
@@ -27,7 +28,7 @@ namespace RainMeadow.Shared
 
         public readonly IPEndPoint endPoint;
         public byte[]? publicKey;
-        public string publicKeyStr => LibSodium.BinToHex(publicKey);
+        public string? publicKeyStr => publicKey is not null? LibSodium.BinToHex(publicKey) : null;
         public SecuredPeerId(IPEndPoint endPoint, byte[]? boxPubkey)
         {
             this.endPoint = endPoint;
@@ -36,7 +37,7 @@ namespace RainMeadow.Shared
                 throw new Exception("malformed pubkey: wrong size");
         }
 
-        public override bool Equals(object obj) => obj is SecuredPeerId id? Equals(id) : false;
+        public override bool Equals(object? obj) => obj is SecuredPeerId id? Equals(id) : false;
         public bool Equals(SecuredPeerId? id) => id == null? false : SharedPlatform.CompareIPEndpoints(this.endPoint, id.endPoint);
         public static bool operator ==(SecuredPeerId? a,SecuredPeerId? b) => a is null? b is null : a.Equals(b);
         public static bool operator !=(SecuredPeerId? a,SecuredPeerId? b) => !(a == b);
@@ -137,9 +138,16 @@ namespace RainMeadow.Shared
         public void Serialize(BinaryWriter writer, SecuredPeerId to, SecuredPeerId me)
         {
 
-            bool hasPubKey = publicKey != null;
-            writer.Write(hasPubKey);
-            if (hasPubKey) writer.Write(publicKey, 0, LibSodium.BOX_PK_SIZE);
+            if (publicKey != null)
+            {
+                writer.Write(true);
+                writer.Write(publicKey, 0, LibSodium.BOX_PK_SIZE);
+            }
+            else
+            {
+                writer.Write(false);
+            }
+
 
             bool isLoopback = SharedPlatform.CompareIPEndpoints(to.endPoint, me.endPoint);
             bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
@@ -240,6 +248,7 @@ namespace RainMeadow.Shared
             // data for connection itself
             public SecuredPeerId id;
             public bool acked_pubkey = false;
+            public string? terminationMessage = null;
 
             public ulong lastIncomingPacketTick = 0;
             public ulong lastOutgoingTick = 0;
@@ -298,12 +307,19 @@ namespace RainMeadow.Shared
                     }
                     else
                     {
-                        manager.SendRaw(
-                            Array.Empty<byte>(),
-                            this,
-                            PacketFlags.Acknoledgement,
-                            acked_pubkey? SecurityFlags.ClearText : SecurityFlags.SendPubKey
-                        );
+                        if (terminationMessage is not null)
+                        {
+                            manager.SendTermination(this);
+                        }
+                        else
+                        {
+                            manager.SendRaw(
+                                Array.Empty<byte>(),
+                                this,
+                                PacketFlags.Acknoledgement,
+                                acked_pubkey? SecurityFlags.ClearText : SecurityFlags.SendPubKey
+                            );
+                        }
                     }
                 }
             }
@@ -330,64 +346,108 @@ namespace RainMeadow.Shared
             }
         }
 
-            List<RemotePeer> peers = new();
-            public bool allowKeylessPeerIDs = false;  // Only allow PeerIds without keys for one specific purpose: directly connecting to LAN lobby hosts, without knowing the key
-            public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false)
-            {
-                if ((!allowKeylessPeerIDs) && peerId.Status == SecuredPeerId.PeerStatus.PendingPublicKey) {
-                    if (!peerId.endPoint.Address.Equals(IPAddress.Broadcast))
-                        // broadcast IP gets a pass because you'll need to send packets there outside of a lobby
-                        throw new Exception("Cannot contact a peer without a known key in this situation");
-                }
-                RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
-                if (make && peer == null)
-                {
-                    peerId.ValidateCryptStatus(false, false, true);
-                    peer = new RemotePeer(this, peerId);
-                    peers.Add(peer);
-                }
-
-                if (peer is not null && peer.id.publicKey is not null)
-                {
-                    peer.shared_key = LibSodium.ComputeSharedKey(private_key, peer.id.publicKey);
-                }
-
-                return peer;
+        List<RemotePeer> peers = new();
+        public bool allowKeylessPeerIDs = false;  // Only allow PeerIds without keys for one specific purpose: directly connecting to LAN lobby hosts, without knowing the key
+        public RemotePeer? GetRemotePeer(SecuredPeerId peerId, bool make = false)
+        {
+            if ((!allowKeylessPeerIDs) && peerId.Status == SecuredPeerId.PeerStatus.PendingPublicKey) {
+                if (!peerId.endPoint.Address.Equals(IPAddress.Broadcast))
+                    // broadcast IP gets a pass because you'll need to send packets there outside of a lobby
+                    throw new Exception("Cannot contact a peer without a known key in this situation");
             }
-            public RemotePeer? GetRemotePeer(IPEndPoint peerEndPoint)
+            RemotePeer? peer = peers.FirstOrDefault(x => x.id.CompareAndUpdate(peerId));
+            if (make && peer == null)
             {
-                RemotePeer? peer = peers.FirstOrDefault(x => SharedPlatform.CompareIPEndpoints(x.id.endPoint, peerEndPoint));
-                return peer;
+                peerId.ValidateCryptStatus(false, false, true);
+                peer = new RemotePeer(this, peerId);
+                peers.Add(peer);
             }
 
-            public delegate void OnPeerForgotten_t(RemotePeer peerId);
-            public event OnPeerForgotten_t OnPeerForgotten = delegate { };
-
-            public void ForgetPeer(RemotePeer peer)
+            if (peer is not null && peer.id.publicKey is not null)
             {
-                if (peers.Contains(peer))
-                {
-                    peer.Dispose();
-                    peers.Remove(peer);
-                    OnPeerForgotten.Invoke(peer);
-                }
+                peer.shared_key = LibSodium.ComputeSharedKey(private_key, peer.id.publicKey);
             }
 
-            public void ForgetPeer(SecuredPeerId peerId)
-            {
-                foreach (RemotePeer peer in peers.Where(x => peerId == x.id).ToArray())
-                {
-                    ForgetPeer(peer);
-                }
-            }
+            return peer;
+        }
 
-            public void ForgetAllPeers()
+        public RemotePeer? GetRemotePeer(IPEndPoint peerEndPoint)
+        {
+            RemotePeer? peer = peers.FirstOrDefault(x => SharedPlatform.CompareIPEndpoints(x.id.endPoint, peerEndPoint));
+            return peer;
+        }
+        
+        public bool AnyConnection => peers.Any();
+        public void TerminateAllPeers(string reason)
+        {
+            foreach (RemotePeer peer in peers)
             {
-                foreach (RemotePeer peer in peers.ToArray())
+                TerminatePeer(peer, reason);
+            }
+        }
+
+        public void TerminatePeer(SecuredPeerId peerId, string reason)
+        {
+            if (GetRemotePeer(peerId, false) is RemotePeer peer) 
+                TerminatePeer(peer, reason);
+        }
+
+        public void TerminatePeer(RemotePeer peer, string reason)
+        {
+            if (peer.terminationMessage != null)
+            {
+                peer.terminationMessage = reason;
+                if (peer.outgoingPackets.Any())
                 {
-                    ForgetPeer(peer);
+                    SendTermination(peer);
+                }
+                OnPeerForgotten.Invoke(peer, reason);
+            }
+            
+        }
+
+        public void SendTermination(RemotePeer peer)
+        {
+            if (peer.terminationMessage is not null)
+            {
+                using (MemoryStream stream = new MemoryStream())
+                using (BinaryWriter writer = new BinaryWriter(stream))
+                {
+                    writer.Write(peer.terminationMessage);
+                    SendRaw(stream.GetBuffer(), peer, PacketFlags.Termination, SecurityFlags.ClearText);
                 }
             }
+        }
+
+        public delegate void OnPeerForgotten_t(RemotePeer peerId, string reason);
+        public event OnPeerForgotten_t OnPeerForgotten = delegate { };
+
+        public void ForgetPeer(RemotePeer peer, string reason = "")
+        {
+            if (peers.Contains(peer))
+            {
+                peer.Dispose();
+                peers.Remove(peer);
+
+                if (peer.terminationMessage is null) OnPeerForgotten.Invoke(peer, reason);  
+            }
+        }
+
+        public void ForgetPeer(SecuredPeerId peerId, string reason = "") 
+        {
+            foreach (RemotePeer peer in peers.Where(x => peerId == x.id).ToArray()) 
+            {
+                ForgetPeer(peer, reason);
+            }
+        }
+
+        public void ForgetAllPeers(string reason = "") 
+        {
+            foreach (RemotePeer peer in peers.ToArray()) 
+            { 
+                ForgetPeer(peer, reason);
+            }
+        }
 
     }
 }

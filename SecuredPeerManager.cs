@@ -84,6 +84,7 @@ namespace RainMeadow.Shared
             Unreliable = 0b0,
             Reliable = 0b1, // and ordered!
             Acknoledgement = 0b10,
+            Termination = 0b11,
         }
 
         [Flags]
@@ -94,7 +95,7 @@ namespace RainMeadow.Shared
             BoxedWithPubKey = Boxed | SendPubKey, // 11
             RequestPubKey = 0b100 | SendPubKey
         }
-
+        public bool AcceptNewConnections { get; set; } = true;
         public readonly SecuredPeerId Me;
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
             InitSocket((ushort)default_port, (ushort)port_attempts);
@@ -126,12 +127,16 @@ namespace RainMeadow.Shared
 
         public void Send(byte[] packet, SecuredPeerId peerId, PacketFlags packet_flags = PacketFlags.Reliable, bool boxed = true)
         {
+            
             // Create a temporary peer for remote packets. Otherwise don't bother.
             RemotePeer? peer = GetRemotePeer(peerId, !packet_flags.HasFlag(PacketFlags.Broadcast));
-            if (peer is null) {
+            if (peer is null) 
+            {
                 peer = new RemotePeer(this, peerId);
-                RainMeadow.Debug("creating ephemeral peer for ID: " + peerId.ToString());
+                SharedCodeLogger.Debug("creating ephemeral peer for ID: " + peerId.ToString());
             }
+
+            if (peer.terminationMessage is not null) return;
             if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
                 // TODO: pretty sure this attempt counter's still a bug
@@ -267,9 +272,7 @@ namespace RainMeadow.Shared
                 }
                 catch (Exception except)
                 {
-                    if (except is SocketException skEx && skEx.ErrorCode == 10060)
-                    {/* it's a timeout, ignore it */}
-                    else
+                    if (except is not SocketException skEx || skEx.ErrorCode != 10060)
                     {
                         // if the error is not a timeout
                         SharedCodeLogger.Error(except);
@@ -286,9 +289,8 @@ namespace RainMeadow.Shared
 
             if (senderEndPoint is not IPEndPoint ipend) return null;
 
-            RemotePeer? peer = GetRemotePeer(ipend as IPEndPoint);
+            RemotePeer? peer = GetRemotePeer(senderEndPoint as IPEndPoint);
             if (peer != null) sender = peer.id;
-            else sender = null;
 
             try
             {
@@ -300,8 +302,15 @@ namespace RainMeadow.Shared
                     SecurityFlags security = (SecurityFlags)reader.ReadByte();
 
                     // Read public key
-                    if (security.HasFlag(SecurityFlags.SendPubKey))
+                    if (AcceptNewConnections && security.HasFlag(SecurityFlags.SendPubKey))
                     {
+                        if (peer?.terminationMessage is not null)
+                        {
+                            ForgetPeer(peer, peer.terminationMessage);
+                            peer = null;
+                            sender = new SecuredPeerId(ipend as IPEndPoint, null);
+                        }
+
                         byte[] new_pub_key = reader.ReadBytes(LibSodium.BOX_PK_SIZE);
                         peer = ReceivePubkey(ref sender, ipend, new_pub_key);
                         if (security == SecurityFlags.RequestPubKey)
@@ -310,6 +319,7 @@ namespace RainMeadow.Shared
                             peer.acked_pubkey = false;
                         }
                     }
+                    if (peer?.terminationMessage is not null) return null;
 
                     if (peer is not null)
                     {
@@ -331,6 +341,7 @@ namespace RainMeadow.Shared
                     byte[]? encodedData = null;
                     if (flags != PacketFlags.Acknoledgement)
                     {
+                        if (sender is null) throw new NullReferenceException();
                         if (stream.Length - stream.Position > 0)
                         {
                             sender.ValidateCryptStatus(true, !security.HasFlag(SecurityFlags.Boxed));
@@ -372,6 +383,22 @@ namespace RainMeadow.Shared
                         }
                     }
 
+                    if (flags.HasFlag(PacketFlags.Termination) && peer is not null)
+                    {
+                        string message = "";
+                        if (encodedData is not null)
+                        {
+                            using (MemoryStream stream1 = new MemoryStream(encodedData))
+                            using (BinaryReader reader1 = new BinaryReader(stream1))
+                            {
+                                message = reader.ReadString();
+                            }
+                        }
+
+                        ForgetPeer(peer, message);
+                        return null;
+                    }
+                    
                     if (flags.HasFlag(PacketFlags.Reliable))
                     {
                         if (EventMath.IsNewerOrEqual(ack, peer!.remote_acknowledgement))
@@ -426,7 +453,7 @@ namespace RainMeadow.Shared
         }
 
 
-        RemotePeer ReceivePubkey(ref SecuredPeerId currentPeerId, IPEndPoint ipsender, byte[] pubKey)
+        RemotePeer ReceivePubkey(ref SecuredPeerId? currentPeerId, IPEndPoint ipsender, byte[] pubKey)
         {
             if (pubKey.Length != LibSodium.BOX_PK_SIZE) throw new Exception("Packet too short");
             if (currentPeerId is null)
@@ -456,7 +483,6 @@ namespace RainMeadow.Shared
                     break;
                 default:
                     throw new InvalidProgrammerException("unhandled peer status value: " + currentPeerId.Status.ToString());
-                    break;
             }
 
             currentPeerId.ValidateCryptStatus(true, false);
