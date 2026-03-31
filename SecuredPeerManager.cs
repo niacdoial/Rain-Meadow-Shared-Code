@@ -328,7 +328,7 @@ namespace RainMeadow.Shared
                     }
                     else if ((!allowKeylessPeerIDs) || flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())
                     {
-                        SharedCodeLogger.Error($"Recieved packet from {sender}, who haven't started a conversation with. Flags: {flags}, {security}");
+                        SharedCodeLogger.Error($"Recieved packet from {senderEndPoint}, who haven't started a conversation with. Flags: {flags}, {security}");
                         return null;
                     }
 
