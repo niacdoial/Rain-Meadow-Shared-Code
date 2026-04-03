@@ -74,7 +74,8 @@ namespace RainMeadow.Shared {
         {
             if (!a.Port.Equals(b.Port)) return false;
             if (IsLoopback(a.Address) && IsLoopback(b.Address)) return true;
-            return a.Address == b.Address;
+            return a.Address.GetAddressBytes().SequenceEqual(b.Address.GetAddressBytes())
+            // note: in some setups, "a.Address == b.Address" has false negatives for no good reason?
         }
 
 
