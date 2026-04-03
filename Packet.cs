@@ -16,8 +16,6 @@ namespace RainMeadow.Shared
             ModifyPlayerList,
             Session,
 
-            [Obsolete("Stop communication to disconnect instead")]
-            SessionEnd,
             RequestLobby,
             InformLobby,
             ChatMessage,

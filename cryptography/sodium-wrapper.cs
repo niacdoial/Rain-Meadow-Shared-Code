@@ -91,7 +91,7 @@ namespace Sodium {
                                         UInt64 clen, /*readonly*/ byte *n,
                                         /*readonly*/ byte *k);
 
-        enum Base64Varient
+        enum Base64Variant
         {
             ORIGINAL = 1, // 01
             ORIGINAL_NO_PADDING = 3, // 11
@@ -197,19 +197,66 @@ namespace Sodium {
                     int errCode = sodium_hex2bin(
                         p_pk, (UIntPtr)binary.Length,
                         p_buff, (UIntPtr)buff.Length,
-                        null, null, null
+                        null, null, null  // TODO: what if invalid characters?
                     );
                 }
             }
             return binary;
         }
 
+        public static string BinToB64(byte[] binary) {
+            // given B64 encodes 6 bit per byte, sequences of 3 bytes get serialised as 4 characters
+            // any of those incomplete sequences get padded
+            // (and then we need strings to be null-terminated)
+            //int n_sequences = (binary.Length + 2)/3;
+            //byte[] buff = new byte[3*n_sequences+1];
+            
+            int charlen = (int)sodium_base64_encoded_len((UIntPtr)binary.Length, (int)Base64Variant.URLSAFE);  // TODO: what if invalid characters?
+            byte[] buff = new byte[charlen+1];  // TODO: checks docs to see if the termination's included already
+            unsafe{
+                fixed (byte* p_buff = buff)
+                fixed (byte* p_pk = binary){
+                    sodium_bin2base64(
+                        p_buff, (UIntPtr)buff.Length,
+                        p_pk, (UIntPtr)binary.Length,
+                        (int)Base64Variant.URLSAFE
+                    );
+                }
+            }
+            return Encoding.UTF8.GetString(buff, 0, charlen*binary.Length);  // cut off the \0
+        }
+
+        // public static byte[] B64ToBin(string b64) {
+        //     if (b64.Length % 4 !=0) {
+        //         throw new InvalidPrgramerError("bad assumption on padded b64 string!");
+        //     }
+        //     int n_sequences = b64.Length /4;
+        //     
+        //     byte[] binary = new byte[n_sequences*3];
+        //     byte[] buff = Encoding.UTF8.GetBytes(hex.ToCharArray());
+        //     UIntPtr actualLen=0;
+
+        //     unsafe{
+        //         fixed (byte* p_buff = &buff[0])
+        //         fixed (byte* p_pk = &binary[0])
+        //         fixed (UIntPtr* p_len = &actualLen) {
+        //             int errCode = sodium_base642bin(
+        //                 p_pk, (UIntPtr)binary.Length,
+        //                 p_buff, (UIntPtr)buff.Length,
+        //                 null, p_len, null,
+        //                 (int)Base64Variant.URLSAFE
+        //             );
+        //         }
+        //     }
+        //     return binary[:actualLen];
+        // }
+
         public static byte[] ComputeSharedKey(byte[] private_key, byte[] public_key) {
             byte[] shared_key = new byte[LibSodium.BOX_DERVK_SIZE];
             unsafe
             {
                 fixed(byte *p_conn_sk = private_key, p_peer_pk = public_key, p_shk = shared_key)
-                {
+		{
                     if (LibSodium.crypto_box_beforenm(p_shk, p_peer_pk, p_conn_sk) != 0)
                         throw new Exception("failed to precompute shared communication key");
                 }

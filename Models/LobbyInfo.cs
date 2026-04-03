@@ -40,7 +40,7 @@ namespace RainMeadow.Shared.Models
             Pinned = false;
             if (Metadata.TryGetValue(PINNED_KEY, out var pinnedval)) 
             {
-                if (bool.TryParse(pinnedval, out var haspassword)) Pinned = haspassword;
+                if (bool.TryParse(pinnedval, out var hasPin)) Pinned = hasPin;
                 Metadata.Remove(PINNED_KEY);
             }
 

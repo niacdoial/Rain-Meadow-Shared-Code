@@ -72,9 +72,24 @@ namespace RainMeadow.Shared {
         static public bool IsLoopback(IPAddress address) => InterfaceAddresses.Contains(address);
         public static bool CompareIPEndpoints(IPEndPoint a, IPEndPoint b) 
         {
+            // if (!a.Port.Equals(b.Port)) {
+            //     SharedCodeLogger.Debug("IPEP: diff. ports");
+            //     return false;
+            // }
+            // else if (IsLoopback(a.Address) && IsLoopback(b.Address)) {
+            //     SharedCodeLogger.Debug("IPEP: both loopback");
+            //     return true;
+            // }
+            // else if (a.Address.GetAddressBytes().SequenceEqual(b.Address.GetAddressBytes())) {
+            //     SharedCodeLogger.Debug("IPEP: same address: "+ BitConverter.ToString(a.Address.GetAddressBytes()));
+            //     return true;
+            // } else {
+            //     SharedCodeLogger.Debug("IPEP: diff. address: "+BitConverter.ToString(a.Address.GetAddressBytes()) + " " + BitConverter.ToString(b.Address.GetAddressBytes()));
+            //     return false;
+            // }
             if (!a.Port.Equals(b.Port)) return false;
             if (IsLoopback(a.Address) && IsLoopback(b.Address)) return true;
-            return a.Address.GetAddressBytes().SequenceEqual(b.Address.GetAddressBytes())
+            return a.Address.GetAddressBytes().SequenceEqual(b.Address.GetAddressBytes());
             // note: in some setups, "a.Address == b.Address" has false negatives for no good reason?
         }
 

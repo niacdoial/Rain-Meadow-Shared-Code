@@ -139,7 +139,7 @@ namespace RainMeadow.Shared
             if (peer.terminationMessage is not null) return;
             if (packet_flags.HasFlag(PacketFlags.Reliable))
             {
-                // TODO: pretty sure this attempt counter's still a bug
+                // for now, infinite retries
                 peer.outgoingPackets.Enqueue(new OutgoingPacket() { data = packet.ToArray(), boxed = boxed, attempts = -1 } );
                 if (peer.outgoingPackets.Any()) return;
             }
@@ -175,13 +175,20 @@ namespace RainMeadow.Shared
                 }
             }
 
-            int boilerplateLen = 1;
-            if (flags == PacketFlags.Acknoledgement || flags.HasFlag(PacketFlags.Reliable)) boilerplateLen += sizeof(ulong);
+            int fullLen = 2;
+            if (flags == PacketFlags.Acknoledgement || flags.HasFlag(PacketFlags.Reliable)) fullLen += sizeof(ulong);
             // then compute the "added bits" added before the cyphertext (extraLength includes the fact that cyphertext is longer than cleartext)
-            if (security.HasFlag(SecurityFlags.SendPubKey)) boilerplateLen += LibSodium.BOX_PK_SIZE;
-            if (security.HasFlag(SecurityFlags.Boxed) && flags.HasFlag(PacketFlags.Reliable)) boilerplateLen += LibSodium.BOX_NONCE_SIZE;
-
-            using (MemoryStream stream = new(boilerplateLen + packet.Length))
+            if (security.HasFlag(SecurityFlags.SendPubKey)) fullLen += LibSodium.BOX_PK_SIZE;
+            if (security.HasFlag(SecurityFlags.Boxed))
+            {
+                fullLen += LibSodium.BOX_NONCE_SIZE;
+                fullLen += LibSodium.SodiumEncodePacketSize(packet.Length);
+            }
+            else
+            {
+                fullLen += packet.Length;
+            }
+            using (MemoryStream stream = new(fullLen))
             using (BinaryWriter writer = new(stream))
             {
 
@@ -338,7 +345,7 @@ namespace RainMeadow.Shared
                     if (flags.HasFlag(PacketFlags.Reliable) || flags == PacketFlags.Acknoledgement) ack = reader.ReadUInt64();
 
 
-                    byte[]? encodedData = null;
+                    byte[]? clearData = null;
                     if (flags != PacketFlags.Acknoledgement)
                     {
                         if (sender is null) throw new NullReferenceException();
@@ -349,8 +356,8 @@ namespace RainMeadow.Shared
                             if (security.HasFlag(SecurityFlags.Boxed))
                             {
                                 byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
-                                byte[] clearText = new byte[stream.Length - stream.Position];
-                                stream.Read(clearText, 0, clearText.Length);
+                                byte[] cypherText = new byte[stream.Length - stream.Position];
+                                stream.Read(cypherText, 0, cypherText.Length);
 
                                 if (peer is null)
                                 {
@@ -367,8 +374,8 @@ namespace RainMeadow.Shared
                                 boxed = true;
 
                                 // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                encodedData = LibSodium.SodiumDecodePacket(clearText, nonce, peer.shared_key);
-                                if (encodedData is null)
+                                clearData = LibSodium.SodiumDecodePacket(cypherText, nonce, peer.shared_key);
+                                if (clearData is null)
                                 {
                                     SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
                                     return null;
@@ -377,8 +384,8 @@ namespace RainMeadow.Shared
                             else
                             {
                                 // SharedCodeLogger.Debug($"from: {sender}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                encodedData = new byte[stream.Length - stream.Position];
-                                stream.Read(encodedData, 0, encodedData.Length);
+                                clearData = new byte[stream.Length - stream.Position];
+                                stream.Read(clearData, 0, clearData.Length);
                             }
                         }
                     }
@@ -386,9 +393,9 @@ namespace RainMeadow.Shared
                     if (flags.HasFlag(PacketFlags.Termination) && peer is not null)
                     {
                         string message = "";
-                        if (encodedData is not null)
+                        if (clearData is not null)
                         {
-                            using (MemoryStream stream1 = new MemoryStream(encodedData))
+                            using (MemoryStream stream1 = new MemoryStream(clearData))
                             using (BinaryReader reader1 = new BinaryReader(stream1))
                             {
                                 message = reader.ReadString();
@@ -443,7 +450,7 @@ namespace RainMeadow.Shared
                         peer.lastIncomingPacketTick = SharedPlatform.TimeMS;
                     }
 
-                    return encodedData;
+                    return clearData;
                 }
             } catch (Exception except) {
                 SharedCodeLogger.Debug(except);

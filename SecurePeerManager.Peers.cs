@@ -12,8 +12,7 @@ namespace RainMeadow.Shared
     public class SecuredPeerId : IEquatable<SecuredPeerId> 
     {
         public enum PeerStatus: byte {
-            // ClearTextOnly = 0,  // network-local broadcast purposes, also allowed for the BlackHole placeholder
-            PendingPublicKey,  // one current use case: connect to a server then asking the user to double-check the pubkey
+            PendingPublicKey,  // one current use case: connect to a server in a LAN context, without knowing the other's key in advance.
             Connected,  // Has a known connection pubkey
         }
 
@@ -149,6 +148,8 @@ namespace RainMeadow.Shared
             }
 
 
+            // we need these special cases, because of NAT: the machines at the respective ends of this packet don't
+            // always see their own IP in same way as the other.
             bool isLoopback = SharedPlatform.CompareIPEndpoints(to.endPoint, me.endPoint);
             bool isThem = SharedPlatform.CompareIPEndpoints(to.endPoint, endPoint);
 
@@ -167,8 +168,6 @@ namespace RainMeadow.Shared
             }
         }
 
-        /// the functions that (de)serialize multiple endpoints at once can deal with the sender seeing itself differently as everyone else.
-        /// The functions that do not need a separate mechanism to deal with this.
         public static void SerializeArray(BinaryWriter writer, SecuredPeerId?[] peers, SecuredPeerId addressedto, SecuredPeerId me, bool nullable = false)
         {
             writer.Write((byte)peers.Length);
