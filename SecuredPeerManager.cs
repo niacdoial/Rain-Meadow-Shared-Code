@@ -378,8 +378,14 @@ namespace RainMeadow.Shared
                                 if (clearData is null)
                                 {
                                     SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
+                                    if (!peer.hasEstablishedEncryption) {
+                                        // if we know we agree on the pubkeys, then this is an attack
+                                        // Otherwise, tell the peer they goofed their key management
+                                        TerminatePeer(peer, "Wrong public key");
+                                    }
                                     return null;
                                 }
+                                peer.hasEstablishedEncryption = true;
                             }
                             else
                             {
@@ -392,6 +398,9 @@ namespace RainMeadow.Shared
 
                     if (flags.HasFlag(PacketFlags.Termination) && peer is not null)
                     {
+                        // dodge deauth attacks: if we know boxed packeds work, only accept termination from a boxed packet
+                        if (peer.hasEstablishedEncryption && !security.HasFlag(SecurityFlags.Boxed))
+                            return null;
                         string message = "";
                         if (clearData is not null)
                         {

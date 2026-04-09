@@ -249,6 +249,10 @@ namespace RainMeadow.Shared
             public bool acked_pubkey = false;
             public string? terminationMessage = null;
 
+
+            // whether or not that peer ever sent us a boxed packet that we could read
+            // (ergo: whether we know that the key exchange succeeded, but not whether *they* know that yet)
+            public bool hasEstablishedEncryption = false; 
             public ulong lastIncomingPacketTick = 0;
             public ulong lastOutgoingTick = 0;
 
@@ -414,6 +418,9 @@ namespace RainMeadow.Shared
                 {
                     writer.Write(peer.terminationMessage);
                     SendRaw(stream.GetBuffer(), peer, PacketFlags.Termination, SecurityFlags.ClearText);
+                    // if they know we agree on the pubkey, they won't accept deauth attacks liek that, so
+                    // also send an encrypted version of that
+                    SendRaw(stream.GetBuffer(), peer, PacketFlags.Termination, SecurityFlags.Boxed);
                 }
             }
         }
