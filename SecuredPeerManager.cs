@@ -93,8 +93,8 @@ namespace RainMeadow.Shared
             Boxed = 0b01, // 01
             SendPubKey = 0b10, // 10
             BoxedWithPubKey = Boxed | SendPubKey, // 11
-            RequestPubKey = 0b100 | SendPubKey
-        }
+            RequestPubKey = 0b100 | SendPubKey // 110. note how requesting a pubkey and sending a message aren't compatible.
+        } 
         public bool AcceptNewConnections { get; set; } = true;
         public readonly SecuredPeerId Me;
         public SecuredPeerManager(int default_port = DEFAULT_PORT, int port_attempts = FIND_PORT_ATTEMPTS) {
@@ -175,25 +175,52 @@ namespace RainMeadow.Shared
                 }
             }
 
-            int fullLen = 2;
-            if (flags == PacketFlags.Acknoledgement || flags.HasFlag(PacketFlags.Reliable)) fullLen += sizeof(ulong);
+            int fullLen = 1;
+            int innerLen = 1;
+            if (flags == PacketFlags.Acknoledgement || flags.HasFlag(PacketFlags.Reliable))
+            {
+                innerLen += sizeof(ulong);
+            }
+            if (!flags.HasFlag(PacketFlags.Acknoledgement))
+            {
+                innerLen += packet.Length;
+            }
             // then compute the "added bits" added before the cyphertext (extraLength includes the fact that cyphertext is longer than cleartext)
             if (security.HasFlag(SecurityFlags.SendPubKey)) fullLen += LibSodium.BOX_PK_SIZE;
             if (security.HasFlag(SecurityFlags.Boxed))
             {
                 fullLen += LibSodium.BOX_NONCE_SIZE;
-                fullLen += LibSodium.SodiumEncodePacketSize(packet.Length);
+                fullLen += LibSodium.SodiumEncodePacketSize(innerLen);
             }
             else
             {
-                fullLen += packet.Length;
+                fullLen += innerLen;
             }
+
+            byte[] clearText = null;
+            using (MemoryStream stream = new(innerLen))
+            using (BinaryWriter writer = new(stream))
+            {
+                writer.Write((byte)flags);
+                
+                // write ack
+                ulong? ack = null;
+                if (flags.HasFlag(PacketFlags.Reliable)) ack = peer.wanted_acknowledgement;
+                else if (flags == PacketFlags.Acknoledgement) ack = peer.remote_acknowledgement;
+                if (ack.HasValue) writer.Write(ack.Value);
+
+                if (packet.Length > 0 && flags != PacketFlags.Acknoledgement)
+                {
+                    writer.Write(packet);
+                }
+                clearText = stream.GetBuffer();
+            }
+            
             using (MemoryStream stream = new(fullLen))
             using (BinaryWriter writer = new(stream))
             {
 
                 // write flags
-                writer.Write((byte)flags);
                 writer.Write((byte)security);
 
                 // write pub key
@@ -202,36 +229,28 @@ namespace RainMeadow.Shared
                     writer.Write(public_key);
                 }
 
-                // write ack
-                ulong? ack = null;
-                if (flags.HasFlag(PacketFlags.Reliable)) ack = peer.wanted_acknowledgement;
-                else if (flags == PacketFlags.Acknoledgement) ack = peer.remote_acknowledgement;
-                if (ack.HasValue) writer.Write(ack.Value);
 
                 // write data boxed / cleartext
-                if (packet.Length > 0 && flags != PacketFlags.Acknoledgement)
+                if (security.HasFlag(SecurityFlags.Boxed))
                 {
-                    if (security.HasFlag(SecurityFlags.Boxed))
-                    {
-                        if (peer.shared_key is null) throw new Exception("Attempted to send boxed packet to peer with null sharedkey");
-                        byte[] nonce = MakeNonce();
-                        writer.Write(nonce);
+                    if (peer.shared_key is null) throw new Exception("Attempted to send boxed packet to peer with null sharedkey");
+                    byte[] nonce = MakeNonce();
+                    writer.Write(nonce);
 
-                        // SharedCodeLogger.Debug($"to {peer}: nonce: {LibSodium.BinToHex(nonce!)}, cleartext: {LibSodium.BinToHex(packet)}");
-                        byte[]? cypherText = null;
-                        LibSodium.SodiumEncodePacket(packet, nonce, peer.shared_key, ref cypherText);
-                        if (cypherText == null) {
-                            SharedCodeLogger.Error("Failed to encrypt packet");
-                            return;
-                        }
+                    // SharedCodeLogger.Debug($"to {peer}: nonce: {LibSodium.BinToHex(nonce!)}, cleartext: {LibSodium.BinToHex(packet)}");
+                    byte[]? cypherText = null;
+                    LibSodium.SodiumEncodePacket(clearText, nonce, peer.shared_key, ref cypherText);
+                    if (cypherText == null) {
+                        SharedCodeLogger.Error("Failed to encrypt packet");
+                        return;
+                    }
 
-                        writer.Write(cypherText);
-                    }
-                    else
-                    {
-                        // SharedCodeLogger.Debug($"from {peer}: cleartext: {LibSodium.BinToHex(packet)}, ");
-                        writer.Write(packet);
-                    }
+                    writer.Write(cypherText);
+                }
+                else
+                {
+                    // SharedCodeLogger.Debug($"from {peer}: cleartext: {LibSodium.BinToHex(packet)}, ");
+                    writer.Write(clearText);
                 }
 
                 try
@@ -298,6 +317,9 @@ namespace RainMeadow.Shared
 
             RemotePeer? peer = GetRemotePeer(senderEndPoint as IPEndPoint);
             if (peer != null) sender = peer.id;
+            byte[]? clearData = null;
+
+            SecurityFlags security = SecurityFlags.ClearText;
 
             try
             {
@@ -305,14 +327,15 @@ namespace RainMeadow.Shared
                 using (BinaryReader reader = new(stream))
                 {
                     // read flags
-                    PacketFlags flags = (PacketFlags)reader.ReadByte();
-                    SecurityFlags security = (SecurityFlags)reader.ReadByte();
+                    security = (SecurityFlags)reader.ReadByte();
 
                     // Read public key
                     if (AcceptNewConnections && security.HasFlag(SecurityFlags.SendPubKey))
                     {
                         if (peer?.terminationMessage is not null)
                         {
+                            // We just kicked this peer, but they are restarting a connection.
+                            // Probably, they typo'd the lobby password the first time or something
                             ForgetPeer(peer, peer.terminationMessage);
                             peer = null;
                             sender = new SecuredPeerId(ipend as IPEndPoint, null);
@@ -324,77 +347,86 @@ namespace RainMeadow.Shared
                         {
                             SendRaw(Array.Empty<byte>(), peer, PacketFlags.Unreliable, SecurityFlags.SendPubKey);
                             peer.acked_pubkey = false;
+                            // pubkey requests cannot contain a message
+                            return null;
                         }
                     }
-                    if (peer?.terminationMessage is not null) return null;
+                    else if (peer?.terminationMessage is not null) return null;
 
                     if (peer is not null)
                     {
-                        // TODO: ...looks like a bug
-                        peer.acked_pubkey = true;
-                    }
-                    else if ((!allowKeylessPeerIDs) || flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())
-                    {
-                        SharedCodeLogger.Error($"Recieved packet from {senderEndPoint}, who haven't started a conversation with. Flags: {flags}, {security}");
-                        return null;
-                    }
-
-
-                    // store provided acknoledgement for later
-                    ulong ack = 0;
-                    if (flags.HasFlag(PacketFlags.Reliable) || flags == PacketFlags.Acknoledgement) ack = reader.ReadUInt64();
-
-
-                    byte[]? clearData = null;
-                    if (flags != PacketFlags.Acknoledgement)
-                    {
-                        if (sender is null) throw new NullReferenceException();
-                        if (stream.Length - stream.Position > 0)
+                        if (security.HasFlag(SecurityFlags.Boxed))
                         {
-                            sender.ValidateCryptStatus(true, !security.HasFlag(SecurityFlags.Boxed));
-
-                            if (security.HasFlag(SecurityFlags.Boxed))
-                            {
-                                byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
-                                byte[] cypherText = new byte[stream.Length - stream.Position];
-                                stream.Read(cypherText, 0, cypherText.Length);
-
-                                if (peer is null)
-                                {
-                                    SharedCodeLogger.Error($"Boxed packet from unknown sender: {sender}");
-                                    return null;
-                                }
-
-                                if (peer.shared_key is null)
-                                {
-                                    SharedCodeLogger.Error($"Boxed packet from sender with unknown shared key: {sender}");
-                                    return null;
-                                }
-
-                                boxed = true;
-
-                                // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                clearData = LibSodium.SodiumDecodePacket(cypherText, nonce, peer.shared_key);
-                                if (clearData is null)
-                                {
-                                    SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
-                                    if (!peer.hasEstablishedEncryption) {
-                                        // if we know we agree on the pubkeys, then this is an attack
-                                        // Otherwise, tell the peer they goofed their key management
-                                        TerminatePeer(peer, "Wrong public key");
-                                    }
-                                    return null;
-                                }
-                                peer.hasEstablishedEncryption = true;
-                            }
-                            else
-                            {
-                                // SharedCodeLogger.Debug($"from: {sender}, cleartext: {LibSodium.BinToHex(clearText)}");
-                                clearData = new byte[stream.Length - stream.Position];
-                                stream.Read(clearData, 0, clearData.Length);
-                            }
+                            peer.acked_pubkey = true;
                         }
                     }
+                    else
+                    {
+                        // a null peer is only acceptable in very specific conditions
+                        PacketFlags flags = PacketFlags.Unreliable;
+                        if (security == SecurityFlags.ClearText)
+                            flags = (PacketFlags)(byte)reader.PeekChar();
+                            // if the packet isn't cleartext, then the flags' value don't matter anyway
+                        
+                        if ((!allowKeylessPeerIDs) || flags != PacketFlags.Broadcast || security != SecurityFlags.ClearText || !sender.IsNetworkLocal())
+                        {
+                            SharedCodeLogger.Error($"Recieved packet from {senderEndPoint}, who haven't started a conversation with. Flags: {flags}, {security}");
+                            return null;
+                        }
+                    }
+
+                    if (sender is null) throw new NullReferenceException();
+                    sender.ValidateCryptStatus(true, !security.HasFlag(SecurityFlags.Boxed));
+
+                    if (security.HasFlag(SecurityFlags.Boxed))
+                    {
+                        byte[] nonce = reader.ReadBytes(LibSodium.BOX_NONCE_SIZE);
+                        byte[] cypherText = new byte[stream.Length - stream.Position];
+                        stream.Read(cypherText, 0, cypherText.Length);
+
+                        if (peer is null)
+                        {
+                            SharedCodeLogger.Error($"Boxed packet from unknown sender: {sender}");
+                            return null;
+                        }
+
+                        if (peer.shared_key is null)
+                        {
+                            SharedCodeLogger.Error($"Boxed packet from sender with unknown shared key: {sender}");
+                            return null;
+                        }
+
+                        boxed = true;
+
+                        // SharedCodeLogger.Debug($"from {sender}: nonce: {LibSodium.BinToHex(nonce)}, cleartext: {LibSodium.BinToHex(clearText)}");
+                        clearData = LibSodium.SodiumDecodePacket(cypherText, nonce, peer.shared_key);
+                        if (clearData is null)
+                        {
+                            SharedCodeLogger.Error($"Failed to decrypt packet {sender}");
+                            if (!peer.hasEstablishedEncryption) {
+                                // if we know we agree on the pubkeys, then this is an attack
+                                // Otherwise, tell the peer they goofed their key management
+                                TerminatePeer(peer, "Wrong public key");
+                            }
+                            return null;
+                        }
+                        peer.hasEstablishedEncryption = true;
+                    }
+                    else
+                    {
+                        // TODO: pointless copy
+                        // SharedCodeLogger.Debug($"from: {sender}, cleartext: {LibSodium.BinToHex(clearText)}");
+                        clearData = new byte[stream.Length - stream.Position];
+                        stream.Read(clearData, 0, clearData.Length);
+                    }
+
+                }
+
+                using (MemoryStream stream = new(clearData, 0, clearData.Length, false))
+                using (BinaryReader reader = new(stream))
+                {
+                    PacketFlags flags = (PacketFlags)reader.ReadByte();
+                    // store provided acknoledgement for later
 
                     if (flags.HasFlag(PacketFlags.Termination) && peer is not null)
                     {
@@ -404,16 +436,17 @@ namespace RainMeadow.Shared
                         string message = "";
                         if (clearData is not null)
                         {
-                            using (MemoryStream stream1 = new MemoryStream(clearData))
-                            using (BinaryReader reader1 = new BinaryReader(stream1))
-                            {
-                                message = reader.ReadString();
-                            }
+                            message = reader.ReadString();
                         }
 
                         ForgetPeer(peer, message);
                         return null;
                     }
+
+                    
+                    ulong ack = 0;
+                    if (flags.HasFlag(PacketFlags.Reliable) || flags == PacketFlags.Acknoledgement) ack = reader.ReadUInt64();
+
                     
                     if (flags.HasFlag(PacketFlags.Reliable))
                     {
