@@ -352,6 +352,11 @@ namespace RainMeadow.Shared
                         }
                     }
                     else if (peer?.terminationMessage is not null) return null;
+                    else if (security.HasFlag(SecurityFlags.SendPubKey)) {
+                        // read but "waste" the pubkey to align the reader.
+                        SharedCodeLogger.Debug($"Recieved unneeded pubkey from {sender}");
+                        reader.ReadBytes(LibSodium.BOX_PK_SIZE);
+                    }
 
                     if (peer is not null)
                     {
@@ -427,6 +432,7 @@ namespace RainMeadow.Shared
                 {
                     PacketFlags flags = (PacketFlags)reader.ReadByte();
                     // store provided acknoledgement for later
+                    //SharedCodeLogger.Debug($"full packet: {len}, cleartext {clearData.Length}, security {security}, flags {flags}");
 
                     if (flags.HasFlag(PacketFlags.Termination) && peer is not null)
                     {
@@ -438,6 +444,7 @@ namespace RainMeadow.Shared
                         {
                             message = reader.ReadString();
                         }
+                        SharedCodeLogger.Debug($"Connection termination request: {message} (by {peer})");
 
                         ForgetPeer(peer, message);
                         return null;
@@ -484,6 +491,10 @@ namespace RainMeadow.Shared
                             {
                                 SharedCodeLogger.Error("Reliable Packet Acknowledgement without corresponding queued message! Expect more problems in ordered communications.");
                             }
+                            if (stream.Length >= stream.Position)
+                            {
+                                SharedCodeLogger.Error("Acknowledgement with extra data");
+                            }
                         }
                     }
 
@@ -491,8 +502,15 @@ namespace RainMeadow.Shared
                     {
                         peer.lastIncomingPacketTick = SharedPlatform.TimeMS;
                     }
+                    if (stream.Length == stream.Position)
+                    {
+                        //empty packet!
+                        return null;
+                    }
 
-                    return clearData;
+                    return new ArraySegment<byte>(
+                        clearData, (int)stream.Position, (int)(stream.Length-stream.Position)
+                    ).ToArray();
                 }
             } catch (Exception except) {
                 SharedCodeLogger.Debug(except);
