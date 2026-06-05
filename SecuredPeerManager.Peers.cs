@@ -110,6 +110,30 @@ namespace RainMeadow.Shared
             return builder.ToString();
         }
 
+        public string ToLogString()
+        {
+            bool ALLOW_DOXX = false;
+
+            StringBuilder builder = new StringBuilder();
+
+            if (publicKey != null)
+            {
+                builder.Append(publicKeyStr);
+                builder.Append("@");
+            }
+
+            if (ALLOW_DOXX)
+            {
+                builder.Append(endPoint);
+            }
+            else
+            {
+                builder.Append("HIDDEN_IP");
+                builder.Append($" [is machine local: {IsLoopback()}, is network local: {IsNetworkLocal()}]");
+            }
+
+            return builder.ToString();
+        }
 
 
         public static SecuredPeerId Deserialize(BinaryReader reader, SecuredPeerId from, SecuredPeerId me)
